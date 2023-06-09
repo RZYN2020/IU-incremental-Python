@@ -4,6 +4,8 @@ import sys
 from sys import platform
 import ast
 from ast import *
+import astunparse
+import black
 from dataclasses import dataclass
 
 
@@ -629,7 +631,7 @@ def generate_name(name):
 ################################################################################
 
 class Type:
-    pass
+    ...
 
 
 def make_assigns(bs):
@@ -697,10 +699,10 @@ class CProgram:
 
     def __str__(self):
         result = ''
-        for (l, ss) in self.body.items():
-            result += l + ':\n'
+        for (l, ss) in enumerate(self.body):
+            result += str(l) + ':\n'
             indent()
-            result += ''.join([str(s) for s in ss]) + '\n'
+            result += str(ss) + '\n'
             dedent()
         return result
 
@@ -892,6 +894,7 @@ class TailCall(stmt):
 class Closure(expr):
     arity: int
     args: list[expr]
+    has_type: Type
     __match_args__ = ("arity", "args")
 
     def __str__(self):
@@ -1045,7 +1048,8 @@ class ValueExp(expr):
 class ProxiedTuple(Value):
     tup: Value
     reads: list[Value]
-
+    value: Value
+    
     def __str__(self):
         return 'proxy[' + str(self.value) + ']'
 
@@ -1055,6 +1059,7 @@ class ProxiedList(Value):
     tup: Value
     read: Value
     write: Value
+    value: Value
 
     def __str__(self):
         return 'proxy[' + str(self.value) + ']'
@@ -1218,7 +1223,11 @@ def compile_and_test(compiler,
             total_passes += 1
             logging.debug('\n# ' + passname + '\n')
             program = getattr(compiler, passname)(program)
-            logging.debug(program)
+            if isinstance(program, Module):
+                new_code = astunparse.unparse(program)
+                logging.debug(new_code)
+            else:
+                logging.debug(program)
             if passname in type_check_dict.keys():
                 type_check_dict[passname](program)
                 logging.debug('type checking passed')
@@ -1404,6 +1413,7 @@ def run_tests(lang, compiler, compiler_name, type_check_dict, interp_dict):
     if not os.path.isdir(directory):
         raise Exception('missing directory for test programs: '
                         + directory)
+    tests = []
     for (dirpath, dirnames, filenames) in os.walk(directory):
         tests = filter(is_python_extension, filenames)
         tests = [dirpath + t for t in tests]

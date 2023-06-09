@@ -25,7 +25,7 @@ interp_dict = {
 }
 
 if True:
-    run_one_test(os.getcwd() + '/tests/var/zero.py',
+    run_one_test(os.getcwd() + '/tests/var/careless.py',
                  'var',
                  compiler,
                  'var',
