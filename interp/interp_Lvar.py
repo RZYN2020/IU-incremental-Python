@@ -1,6 +1,6 @@
 from ast import *
-from utils import input_int
-from interp_Lint import InterpLint
+from utils.utils import input_int
+from interp.interp_Lint import InterpLint
 
 class InterpLvar(InterpLint):
   def interp_exp(self, e, env):

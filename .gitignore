@@ -1,2 +1,6 @@
 **/__pycache__/
 /runtime.o
+**/*.typed
+**/*.out
+.vscode
+.idea

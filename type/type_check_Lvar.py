@@ -1,5 +1,5 @@
 from ast import *
-from utils import IntType
+from utils.utils import IntType
 
 class TypeCheckLvar:
           

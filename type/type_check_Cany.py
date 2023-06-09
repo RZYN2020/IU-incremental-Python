@@ -1,5 +1,5 @@
 from type_check_Clambda import TypeCheckClambda
-from utils import *
+from utils.utils import *
 
 class TypeCheckCany(TypeCheckClambda):
     

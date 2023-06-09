@@ -1,5 +1,5 @@
 from ast import *
-from utils import input_int, add64, sub64, neg64
+from utils.utils import input_int, add64, sub64, neg64
 
 def interp_exp(e):
     match e:

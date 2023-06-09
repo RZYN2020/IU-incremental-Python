@@ -4,7 +4,7 @@ import ast
 from dataclasses import dataclass
 from typing import Iterable
 
-from utils import dedent, indent, indent_stmt, label_name
+from utils.utils import dedent, indent, indent_stmt, label_name
 
 
 @dataclass

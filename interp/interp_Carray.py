@@ -1,6 +1,6 @@
 from ast import *
 from interp_Ctup import InterpCtup
-from utils import *
+from utils.utils import *
 
 class InterpCarray(InterpCtup):
 

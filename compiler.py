@@ -1,7 +1,7 @@
 import ast
 from ast import *
-from utils import *
-from x86_ast import *
+from utils.utils import *
+from x86.x86_ast import *
 import os
 from typing import List, Tuple, Set, Dict
 
