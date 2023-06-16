@@ -40,6 +40,9 @@ class Compiler:
             case Constant(value):
                 return (Constant(value), [])
             case Call(Name('input_int'), [], keywords):
+                if need_atomic:
+                    temp = Name(generate_name("temp"))
+                    return (temp, [(temp, Call(Name('input_int'), [], keywords))])
                 return (Call(Name('input_int'), [], keywords), [])
             case _:
               raise Exception('error in interp_exp, unexpected ' + repr(e))
@@ -48,7 +51,7 @@ class Compiler:
     def rco_stmt(self, s: stmt) -> List[stmt]:
         match s:
             case Assign([Name(id)], value):
-                new_value, temps = self.rco_exp(value, True)
+                new_value, temps = self.rco_exp(value, False)
                 stmts = [Assign([name], exp) for (name, exp) in temps] + [Assign([Name(id)], new_value)]
                 return a_to_stmts(stmts)
             case Expr(Call(Name('print'), [arg], keywords)):
@@ -56,7 +59,7 @@ class Compiler:
                 stmts = [Assign([name], exp) for (name, exp) in temps] + [Expr(Call(Name('print'), [new_arg], keywords))]
                 return ea_to_stmts(stmts)
             case Expr(value):
-                new_value, temps = self.rco_exp(value, True)
+                new_value, temps = self.rco_exp(value, False)
                 stmts = [Assign([name], exp) for (name, exp) in temps] + [Expr(new_value)]
                 return ea_to_stmts(stmts)
             case _:

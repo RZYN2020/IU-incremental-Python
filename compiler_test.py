@@ -43,6 +43,7 @@ def call(func, *args, **kwargs):
         logging.info(e)
 
 if __name__ == '__main__':
+    call(test_var, file_name='/tests/var/cpxx.py')
     call(test_var, file_name='/tests/var/careless.py')
     call(test_var, file_name='/tests/var/cpx.py')
     call(test_var, file_name='/tests/var/input.py')

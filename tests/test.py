@@ -140,7 +140,8 @@ def run_one_test(test: str, lang: str, compiler, compiler_name: str,
     test_root = os.path.splitext(test)[0]
     test_name = os.path.basename(test_root)
     
-    logging.info('\n\n\n\n\n\n\n========================================================')
+    logging.info('\n\n\n\n\n\n\n')
+    logging.info('========================================================')
     logging.info(
         f'running test {test_name} for compiler {compiler_name} of {lang}')
     logging.info('========================================================')
