@@ -15,15 +15,15 @@ class Compiler(compiler.Compiler):
 
     def read_vars(self, i: instr) -> Set[location]:
         # YOUR CODE HERE
-        pass
+        ...
 
     def write_vars(self, i: instr) -> Set[location]:
         # YOUR CODE HERE
-        pass
+        ...
 
     def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
         # YOUR CODE HERE
-        pass
+        ...
 
     ############################################################################
     # Build Interference
@@ -32,7 +32,7 @@ class Compiler(compiler.Compiler):
     def build_interference(self, p: X86Program,
                            live_after: Dict[instr, Set[location]]) -> UndirectedAdjList:
         # YOUR CODE HERE
-        pass
+        ...
 
     ############################################################################
     # Allocate Registers
@@ -42,12 +42,12 @@ class Compiler(compiler.Compiler):
     def color_graph(self, graph: UndirectedAdjList,
                     variables: Set[location]) -> Tuple[Dict[location, int], Set[location]]:
         # YOUR CODE HERE
-        pass
+        ...
 
     def allocate_registers(self, p: X86Program,
                            graph: UndirectedAdjList) -> X86Program:
         # YOUR CODE HERE
-        pass
+        ...
 
     ############################################################################
     # Assign Homes
@@ -55,7 +55,7 @@ class Compiler(compiler.Compiler):
 
     def assign_homes(self, pseudo_x86: X86Program) -> X86Program:
         # YOUR CODE HERE
-        pass
+        ...
 
     ###########################################################################
     # Patch Instructions
@@ -63,7 +63,7 @@ class Compiler(compiler.Compiler):
 
     def patch_instructions(self, p: X86Program) -> X86Program:
         # YOUR CODE HERE
-        pass
+        ...
 
     ###########################################################################
     # Prelude & Conclusion
@@ -71,4 +71,4 @@ class Compiler(compiler.Compiler):
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         # YOUR CODE HERE
-        pass
+        ...
