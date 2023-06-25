@@ -3,16 +3,11 @@ from ast import *
 from utils.utils import *
 from x86.x86_ast import *
 import os
-from typing import List, Tuple, Set, Dict, Union
+from typing import List, Tuple, Set, Dict, Union, cast
 
 Binding = Tuple[Name, expr]
 Temporaries = List[Binding]
 
-def ea_to_stmts(stmts: List[Expr | Assign]) -> List[stmt]:
-    return [s if isinstance(s, stmt) else Expr(value=s.value) for s in stmts]
-
-def a_to_stmts(stmts: List[Assign]) -> List[stmt]:
-    return [s if isinstance(s, stmt) else Expr(value=s.value) for s in stmts]
 
 class Compiler:
 
@@ -45,27 +40,27 @@ class Compiler:
                     return (temp, [(temp, Call(Name('input_int'), [], keywords))])
                 return (Call(Name('input_int'), [], keywords), [])
             case _:
-              raise Exception('error in interp_exp, unexpected ' + repr(e))
-        
-        
-    def rco_stmt(self, s: stmt) -> List[stmt]:
+                raise Exception('error in interp_exp, unexpected ' + repr(e))
+
+    def rco_stmt(self, s: stmt) -> list[stmt]:
+        stmts: list[stmt]
+        temp_assigns: list[stmt]
         match s:
             case Assign([Name(id)], value):
                 new_value, temps = self.rco_exp(value, False)
-                stmts = [Assign([name], exp) for (name, exp) in temps] + [Assign([Name(id)], new_value)]
-                return a_to_stmts(stmts)
+                temp_assigns = [Assign([name], exp) for (name, exp) in temps]
+                stmts =  temp_assigns + [Assign([Name(id)], new_value)]
             case Expr(Call(Name('print'), [arg], keywords)):
                 new_arg, temps = self.rco_exp(arg, True)
-                stmts = [Assign([name], exp) for (name, exp) in temps] + [Expr(Call(Name('print'), [new_arg], keywords))]
-                return ea_to_stmts(stmts)
+                temp_assigns = [Assign([name], exp) for (name, exp) in temps]
+                stmts = temp_assigns + [Expr(Call(Name('print'), [new_arg], keywords))]
             case Expr(value):
                 new_value, temps = self.rco_exp(value, False)
-                stmts = [Assign([name], exp) for (name, exp) in temps] + [Expr(new_value)]
-                return ea_to_stmts(stmts)
+                temp_assigns = [Assign([name], exp) for (name, exp) in temps]
+                stmts = temp_assigns + [Expr(new_value)]
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
-            
-        
+        return stmts
 
     def remove_complex_operands(self, p: Module) -> Module:
         match p:
@@ -73,7 +68,8 @@ class Compiler:
                 stmts = [stmt for s in body for stmt in self.rco_stmt(s)]
                 return Module(stmts)
             case _:
-                raise Exception('remove_complex_operands: unexpected ' + repr(p))
+                raise Exception(
+                    'remove_complex_operands: unexpected ' + repr(p))
 
     ############################################################################
     # Select Instructions
@@ -81,15 +77,27 @@ class Compiler:
 
     def select_arg(self, e: expr) -> arg:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def select_stmt(self, s: stmt) -> List[instr]:
-        # YOUR CODE HERE
-        ...        
+        match s:
+            case Assign([Name(id)], value):
+                ...
+            case Expr(Call(Name('print'), [arg], keywords)):
+                ...
+            case Expr(value):
+                ...
+            case _:
+                raise Exception('select_stmt: unexpected ' + repr(s))
+        return []
 
     def select_instructions(self, p: Module) -> X86Program:
-        # YOUR CODE HERE
-        ...        
+        match p:
+            case Module(body):
+                stmts = [stmt for s in body for stmt in self.select_stmt(s)]
+                return X86Program(stmts)
+            case _:
+                raise Exception('select_instructions: unexpected ' + repr(p))
 
     ############################################################################
     # Assign Homes
@@ -97,21 +105,21 @@ class Compiler:
 
     def assign_homes_arg(self, a: arg, home: Dict[Variable, arg]) -> arg:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def assign_homes_instr(self, i: instr,
                            home: Dict[Variable, arg]) -> instr:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def assign_homes_instrs(self, ss: List[instr],
                             home: Dict[Variable, arg]) -> List[instr]:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def assign_homes(self, p: X86Program) -> X86Program:
         # YOUR CODE HERE
-        ...        
+        ...
 
     ############################################################################
     # Patch Instructions
@@ -119,15 +127,15 @@ class Compiler:
 
     def patch_instr(self, i: instr) -> List[instr]:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def patch_instrs(self, ss: List[instr]) -> List[instr]:
         # YOUR CODE HERE
-        ...        
+        ...
 
     def patch_instructions(self, p: X86Program) -> X86Program:
         # YOUR CODE HERE
-        ...        
+        ...
 
     ############################################################################
     # Prelude & Conclusion
@@ -135,5 +143,4 @@ class Compiler:
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         # YOUR CODE HERE
-        ...        
-
+        ...
