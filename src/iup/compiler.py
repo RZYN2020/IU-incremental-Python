@@ -1,13 +1,16 @@
-import ast
-from ast import *
-from utils.utils import *
-from x86.x86_ast import *
-import os
-from typing import List, Tuple, Set, Dict, Union, cast
+from typing import List, Tuple, Dict
+from utils import generate_name
+from x86.x86_ast import (
+    instr, X86Program, Variable
+)
+
+from ast import (
+    Name, BinOp, UnaryOp, USub, Constant, Call, Module, Assign, Expr, 
+    stmt, expr, arg, expr
+)
 
 Binding = Tuple[Name, expr]
 Temporaries = List[Binding]
-
 
 class Compiler:
 

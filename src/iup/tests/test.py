@@ -4,7 +4,16 @@ import sys
 from utils.utils import is_python_extension
 from sys import platform
 from ast import parse, Module
-from dataclasses import dataclass
+
+
+
+class TestPython:
+    
+    def test_var(self):
+        dir_path = os.path.dirname(f'{os.path.realpath(__file__)}/var')
+        
+        assert True
+
 
 
 # Given the `ast` output of a pass and a test program (root) name,

@@ -2,6 +2,7 @@
 /runtime.o
 **/*.typed
 **/*.out
+./jit
 .vscode
 .idea
 jit
