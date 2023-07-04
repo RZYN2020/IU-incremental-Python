@@ -1,7 +1,7 @@
 from ast import *
 from interp_Lfun import Function
 from interp_Llambda import InterpLlambda
-from utils import *
+from iup.utils import *
 from dataclasses import dataclass
 
 @dataclass(eq=True)

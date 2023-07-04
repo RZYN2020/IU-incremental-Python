@@ -1,7 +1,7 @@
 from ast import *
 from interp_Cfun import InterpCfun
 from interp_Llambda import ClosureTuple
-from utils import *
+from iup.utils import *
 from interp_Lfun import Function
 
 class InterpClambda(InterpCfun):

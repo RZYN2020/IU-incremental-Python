@@ -1,12 +1,10 @@
-from iup import Language
+from iup.config import Language
 from typing import Dict
-import ast
+from iup.type.type_check import TypeChecker
+from iup.type.type_check_Lvar import TypeCheckLvar
 
-
-class TypeChecker:
-    def typecheck(self, p: ast.Module):
-        ...
         
 TYPE_CHECKERS: Dict[Language, TypeChecker] = {
+    "Lvar": TypeCheckLvar(),
 }
 

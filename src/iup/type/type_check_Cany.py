@@ -1,5 +1,5 @@
 from type_check_Clambda import TypeCheckClambda
-from utils.utils import *
+from iup.utils import ValueOf, TagOf, Call, Name, AnyType, IntType, Bottom, TupleType, FunctionType
 
 class TypeCheckCany(TypeCheckClambda):
     

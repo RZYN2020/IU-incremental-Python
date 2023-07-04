@@ -1,8 +1,8 @@
 import compiler
-from utils.graph import UndirectedAdjList
+from iup.utils.graph import UndirectedAdjList
 from typing import List, Tuple, Set, Dict
 from ast import *
-from x86.x86_ast import *
+from iup.x86.x86_ast import *
 from typing import Set, Dict, Tuple
 
 # Skeleton code for the chapter on Register Allocation

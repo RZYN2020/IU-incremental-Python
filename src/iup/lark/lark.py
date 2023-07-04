@@ -1,22 +1,22 @@
 from __future__ import absolute_import
 
 
-from lark.exceptions import ConfigurationError, assert_config
+from iup.lark.exceptions import ConfigurationError, assert_config
 
 import sys, os, pickle, hashlib
 from io import open
 import tempfile
 from warnings import warn
 
-from .utils import STRING_TYPE, Serialize, SerializeMemoizer, FS, isascii, logger, ABC, abstractmethod
-from .load_grammar import load_grammar, FromPackageLoader, Grammar, verify_used_files
-from .tree import Tree
-from .common import LexerConf, ParserConf
+from iup.lark.utils import STRING_TYPE, Serialize, SerializeMemoizer, FS, isascii, logger, ABC, abstractmethod
+from iup.lark.load_grammar import load_grammar, FromPackageLoader, Grammar, verify_used_files
+from iup.lark.tree import Tree
+from iup.lark.common import LexerConf, ParserConf
 
-from .lexer import Lexer, TraditionalLexer, TerminalDef, LexerThread
-from .parse_tree_builder import ParseTreeBuilder
-from .parser_frontends import get_frontend, _get_lexer_callbacks
-from .grammar import Rule
+from iup.lark.lexer import Lexer, TraditionalLexer, TerminalDef, LexerThread
+from iup.lark.parse_tree_builder import ParseTreeBuilder
+from iup.lark.parser_frontends import get_frontend, _get_lexer_callbacks
+from iup.lark.grammar import Rule
 
 import re
 try:

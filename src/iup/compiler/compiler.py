@@ -1,6 +1,6 @@
 from typing import List, Tuple, Dict
-from utils import generate_name
-from x86.x86_ast import (
+from iup.utils import generate_name
+from iup.x86.x86_ast import (
     instr, X86Program, Variable
 )
 
@@ -13,6 +13,20 @@ Binding = Tuple[Name, expr]
 Temporaries = List[Binding]
 
 class Compiler:
+    
+    __instance = None
+
+    def __init__(self):
+        if Compiler.__instance is not None:
+            raise Exception("Compiler instance already exists")
+        else:
+            Compiler.__instance = self
+
+    @staticmethod
+    def get_instance():
+        if Compiler.__instance is None:
+            Compiler()
+        return Compiler.__instance
 
     ############################################################################
     # Remove Complex Operands

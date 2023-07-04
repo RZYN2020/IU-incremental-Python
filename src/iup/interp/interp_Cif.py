@@ -1,6 +1,6 @@
 from ast import *
 from interp_Lif import InterpLif
-from utils import *
+from iup.utils import *
 
 class InterpCif(InterpLif):
 

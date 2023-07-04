@@ -1,6 +1,6 @@
 from ast import *
 from interp_Cif import InterpCif
-from utils import *
+from iup.utils import *
 
 class InterpCtup(InterpCif):
 

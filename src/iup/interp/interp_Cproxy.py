@@ -2,7 +2,7 @@ from ast import *
 from interp_Ldyn import Tagged
 from interp_Llambda import ClosureTuple
 from interp_Cany import InterpCany
-from utils import *
+from iup.utils import *
 
 class InterpCproxy(InterpCany):
 

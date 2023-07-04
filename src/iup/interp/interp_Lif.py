@@ -1,6 +1,6 @@
 from ast import *
 from interp_Lvar import InterpLvar
-from utils import *
+from iup.utils import *
 
 class InterpLif(InterpLvar):
 

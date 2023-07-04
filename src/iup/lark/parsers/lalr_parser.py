@@ -9,7 +9,7 @@ from ..utils import Serialize
 
 from .lalr_analysis import LALR_Analyzer, Shift, Reduce, IntParseTable
 from .lalr_interactive_parser import InteractiveParser
-from lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken
+from iup.lark.exceptions import UnexpectedCharacters, UnexpectedInput, UnexpectedToken
 
 ###{standalone
 

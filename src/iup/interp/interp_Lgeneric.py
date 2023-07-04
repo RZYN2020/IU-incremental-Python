@@ -1,6 +1,6 @@
 from ast import *
 from interp_Llambda import InterpLlambda
-from utils import *
+from iup.utils import *
 
 class InterpLgeneric(InterpLlambda):
 

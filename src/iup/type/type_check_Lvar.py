@@ -1,7 +1,8 @@
 from ast import *
-from utils.utils import IntType
+from iup.utils import IntType
+from iup.type.type_check import TypeChecker
 
-class TypeCheckLvar:
+class TypeCheckLvar(TypeChecker):
           
   def check_type_equal(self, t1, t2, e):
     if t1 != t2:
@@ -56,7 +57,7 @@ class TypeCheckLvar:
       case _:
         raise Exception('type_check_stmts: unexpected ' + repr(ss))
 
-  def type_check(self, p):
+  def type_check(self, p: Module):
     match p:
       case Module(body):
         self.type_check_stmts(body, {})

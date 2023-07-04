@@ -1,7 +1,7 @@
 # Author: Joe Near
 # License: GPLv3
 
-from lark import Lark
+from iup.lark import Lark
 
 x86_parser = Lark(r"""
     ?instr: "movq" arg "," arg -> movq

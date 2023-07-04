@@ -1,1 +1,1 @@
-from utils.utils import generate_name
+from iup.utils.utils import *

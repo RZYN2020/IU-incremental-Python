@@ -1,6 +1,6 @@
 from ast import *
 from interp_Ltup import InterpLtup
-from utils import *
+from iup.utils import *
 
 class InterpLarray(InterpLtup):
 

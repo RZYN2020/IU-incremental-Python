@@ -1,6 +1,6 @@
 from ast import *
 from interp_Carray import InterpCarray
-from utils import *
+from iup.utils import *
 from interp_Lfun import Function
 
 class InterpCfun(InterpCarray):

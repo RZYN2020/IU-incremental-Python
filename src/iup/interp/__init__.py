@@ -1,11 +1,8 @@
-from iup import Language 
+from iup.config import Language
 from typing import Dict
-import ast
+from iup.interp.interp import Intepreter
+from iup.interp.interp_Lvar import InterpLvar
 
-class Intepreter:
-    def interp(self, p: ast.Module):
-        ...
-                
 INTERPRETERS: Dict[Language, Intepreter] = {
-    
+    "Lvar": InterpLvar(),
 }

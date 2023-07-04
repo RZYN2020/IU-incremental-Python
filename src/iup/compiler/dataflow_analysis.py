@@ -1,7 +1,6 @@
 from collections import deque
-from utils.graph import transpose
+from iup.utils.graph import transpose
 from functools import reduce
-from utils.utils import trace
 
 def analyze_dataflow(G, transfer, bottom, join):
     trans_G = transpose(G)

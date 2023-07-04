@@ -831,7 +831,8 @@ class FromPackageLoader(object):
         raise IOError()
 
 
-stdlib_loader = FromPackageLoader('lark', IMPORT_PATHS)
+# todo: make the code below more generic
+stdlib_loader = FromPackageLoader('iup.lark', IMPORT_PATHS)
 
 
 

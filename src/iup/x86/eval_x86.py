@@ -3,11 +3,9 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
-
-from utils.utils import *
-
-from x86.convert_x86 import convert_program
-from x86.parser_x86 import x86_parser, x86_parser_instrs
+from iup.utils import *
+from iup.x86.convert_x86 import convert_program
+from iup.x86.parser_x86 import x86_parser, x86_parser_instrs
 
 
 def interp_x86(program):

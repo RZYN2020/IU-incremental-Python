@@ -4,7 +4,6 @@ import sys
 from sys import platform
 import ast
 from ast import *
-import black
 from dataclasses import dataclass
 
 

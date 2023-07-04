@@ -3,7 +3,7 @@ from interp_Lfun import Function
 from interp_Llambda import InterpLlambda, ClosureTuple
 from interp_Lany import InterpLany
 from interp_Ldyn import Tagged
-from utils import *
+from iup.utils import *
     
 class InterpLcast(InterpLany):
 
