@@ -1,10 +1,8 @@
 # Convert from the x86 AST classes defined in utils.py into the parse
 # tree format used by the interpreter.
 
-from ast import Constant, Name
-
-from iup.lark import Tree
-from iup.utils import GlobalValue, label_name
+from ..lark import Tree
+from ..utils import GlobalValue, label_name
 from .x86_ast import *
 
 

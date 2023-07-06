@@ -1,7 +1,7 @@
-from iup.config import Language
+from ..compiler import Language
 from typing import Dict
-from iup.interp.interp import Intepreter
-from iup.interp.interp_Lvar import InterpLvar
+from .interp import Intepreter
+from .interp_Lvar import InterpLvar
 
 INTERPRETERS: Dict[Language, Intepreter] = {
     "Lvar": InterpLvar(),

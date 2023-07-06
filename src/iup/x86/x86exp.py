@@ -7,12 +7,12 @@
 # callq label | pushq arg | popq arg | retq | jmp label
 
 from dataclasses import dataclass
-from typing import List, Set, Dict, Tuple, Any
-from .base_ast import AST
+from typing import List, Dict
+from .x86_ast import *
 
 # arg
 @dataclass(frozen=True, eq=True)
-class Arg(AST):
+class Arg:
     pass
 
 @dataclass(frozen=True, eq=True)
@@ -50,7 +50,7 @@ class Deref(Arg):
 
 # instr
 @dataclass(frozen=True, eq=True)
-class Instr(AST):
+class Instr:
     pass
 
 @dataclass(frozen=True, eq=True)
@@ -133,5 +133,5 @@ class Retq(Instr):
     pass
 
 @dataclass(frozen=True, eq=True)
-class Program(AST):
+class Program:
     blocks: Dict[str, List[Instr]]

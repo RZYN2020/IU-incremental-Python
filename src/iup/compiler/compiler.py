@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, ClassVar, Optional
 from iup.utils import generate_name
 from iup.x86.x86_ast import (
     instr, X86Program, Variable
@@ -14,7 +14,7 @@ Temporaries = List[Binding]
 
 class Compiler:
     
-    __instance = None
+    __instance: ClassVar[Optional['Compiler']] = None
 
     def __init__(self):
         if Compiler.__instance is not None:
@@ -23,9 +23,9 @@ class Compiler:
             Compiler.__instance = self
 
     @staticmethod
-    def get_instance():
+    def get_instance() -> 'Compiler':
         if Compiler.__instance is None:
-            Compiler()
+            Compiler.__instance = Compiler()
         return Compiler.__instance
 
     ############################################################################

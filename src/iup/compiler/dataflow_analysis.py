@@ -1,5 +1,5 @@
 from collections import deque
-from iup.utils.graph import transpose
+from ..utils.graph import transpose
 from functools import reduce
 
 def analyze_dataflow(G, transfer, bottom, join):

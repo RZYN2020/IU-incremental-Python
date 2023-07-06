@@ -1,31 +1,26 @@
+from typing import List, Any, Callable, Literal
+from dataclasses import dataclass
 from .compiler import Compiler
-from iup.x86.eval_x86 import interp_x86
-from iup.type import TYPE_CHECKERS
-from iup.config import CompilerConfig, Pass
-from ast import parse
-import os
 
-compiler = Compiler.get_instance()
+PassName = Literal[ 'shrink', 'uniquify', 'reveal_functions', 'resolve', 'erase_types', 'cast_insert',
+                'lower_casts', 'differentiate_proxies', 'reveal_casts', 'convert_assignments',
+                'convert_to_closures', 'limit_functions', 'expose_allocation', 'remove_complex_operands',
+                'explicate_control',
+                # below are passes that must be included in the compiler
+                'select_instructions',
+                'assign_homes',
+                'patch_instructions',
+                'prelude_and_conclusion',
+              ]
 
-LvarConfig: CompilerConfig = [
-    Pass('remove_complex_operands', 'Lvar', 'Lvar', compiler.remove_complex_operands),
-]
+Language = Literal['Lint', 'Lvar']
 
-def compile(source: str, target: str, config: CompilerConfig, emulate_x86 = False) -> None:
-    
-    with open(source, 'r') as file:
-        program = parse(file.read())
-        
-    assert len(config) > 0
-    assert config[-1].target == 'X86'
-    TYPE_CHECKERS[config[0].source].typecheck(source)
-    
-    for pass_ in config:
-        program = pass_.transform(program)
-        
-    if emulate_x86:
-        interp_x86(program)
-    else:
-        with open(f'{target}.s', 'w') as file:
-            file.write(str(program))
-        os.system(f'gcc runtime.o {target}.s -o {target}')
+@dataclass
+class Pass:
+    name: PassName
+    source: Language
+    target: Language
+    transform: Callable[[Any], Any]
+
+
+CompilerConfig = List[Pass]

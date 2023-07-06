@@ -1,6 +1,5 @@
 import os
 import logging
-import sys
 from sys import platform
 import ast
 from ast import *

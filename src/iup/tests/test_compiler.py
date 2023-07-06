@@ -3,10 +3,10 @@ import os
 import sys
 from typing import Any, List, Tuple
 from ast import parse
-from iup.compiler import CompilerConfig, LvarConfig
-from iup.config import Language
-from iup.interp import INTERPRETERS
-from iup.type   import TYPE_CHECKERS
+from ..compiler import Language, CompilerConfig
+from .. import LvarConfig
+from ..interp import INTERPRETERS
+from ..type   import TYPE_CHECKERS
 
 TEST_BASE = os.path.join(os.getcwd(), 'src/iup/tests')
 
