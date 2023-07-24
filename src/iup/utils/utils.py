@@ -615,7 +615,7 @@ Name.__hash__ = hash_Name
 name_id = 0
 
 
-def generate_name(name):
+def generate_name(name: str) -> str:
     global name_id
     ls = name.split('.')
     new_id = name_id
