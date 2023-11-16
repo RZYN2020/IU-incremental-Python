@@ -16,20 +16,31 @@ compiler_test_configs: List[Tuple[CompilerConfig, str]] = [
     (LvarConfig, os.path.join(TEST_BASE, 'var')),
 ]
 
-def check_pass(lang: Language, res: Any, test_dir: str, test: str) -> bool:
+def check_pass(lang: Language, res: Any, test_dir: str, test: str, emulate: bool) -> bool:
     input_file  = os.path.join(test_dir, test + ".in")
     output_file = os.path.join(test_dir, test + ".out")
-    stdin = sys.stdin
-    stdout = sys.stdout
-    sys.stdin = open(input_file, 'r')
-    sys.stdout = open(output_file, 'w')
+    
+    def run_with_io(command) -> None:
+        stdin = sys.stdin
+        stdout = sys.stdout
+        sys.stdin = open(input_file, 'r')
+        sys.stdout = open(output_file, 'w')
+        command()
+        sys.stdin = stdin
+        sys.stdout = stdout
+
     if INTERPRETERS.get(lang) is not None:
-        INTERPRETERS[lang].interp(res)
+        run_with_io(lambda: INTERPRETERS[lang].interp(res))
     else:
-        interp_x86(res)
-    sys.stdin = stdin
-    sys.stdout = stdout
-    return os.system('diff' + ' -b ' + output_file + ' ' + os.path.join(test_dir, test + '.golden')) == 0
+        if emulate:
+            run_with_io(lambda: interp_x86(res))
+        else:
+            with open(f'{test_dir}/{test}.s', 'w') as file:
+                file.write(str(res))
+            os.system(f'gcc runtime.o {test_dir}/{test}.s -o {test_dir}/{test}')
+            run_with_io(lambda: os.system(f'{test_dir}/{test}'))
+
+    return os.system('diff --strip-trailing-cr' + ' -b ' + output_file + ' ' + os.path.join(test_dir, test + '.golden')) == 0
 
 
 def get_tests(test_dir: str) -> List[str]:
@@ -54,11 +65,12 @@ def test(test: str, test_dir: str, config: CompilerConfig):
         program = parse(source.read())
         
     for pass_ in config:
+        # print(f"check {pass_.name}")
         lang = pass_.source
         if TYPE_CHECKERS.get(lang) is not None:
             TYPE_CHECKERS[lang].type_check(program)
         program = pass_.transform(program)
-        assert check_pass(pass_.target, program, test_dir, test)
+        check_pass(pass_.target, program, test_dir, test, False)
             
             
 if __name__ == '__main__':

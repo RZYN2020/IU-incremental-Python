@@ -13,7 +13,7 @@ PassName = Literal[ 'shrink', 'uniquify', 'reveal_functions', 'resolve', 'erase_
                 'prelude_and_conclusion',
               ]
 
-Language = Literal['Lint', 'Lvar', 'X86var']
+Language = Literal['Lint', 'Lvar', 'X86var', 'X86']
 
 @dataclass
 class Pass:

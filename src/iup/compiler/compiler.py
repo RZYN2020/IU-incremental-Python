@@ -27,6 +27,11 @@ class Compiler:
     # Remove Complex Operands
     ############################################################################
 
+    '''
+    Flatten Expression.
+    Parameters:	
+        need_atomic: if return expr should be one of [const, name]
+    '''
     def rco_exp(self, e: ast.expr, need_atomic: bool) -> Tuple[ast.expr, Temporaries]:
         match e:
             case ast.Name(id):
@@ -54,6 +59,9 @@ class Compiler:
             case _:
                 raise Exception('error in interp_exp, unexpected ' + repr(e))
 
+    '''
+    Convert to 3AC actually...
+    '''
     def rco_stmt(self, s: ast.stmt) -> list[ast.stmt]:
         stmts: list[ast.stmt]
         temp_assigns: list[ast.stmt]
@@ -66,7 +74,7 @@ class Compiler:
                 new_arg, temps = self.rco_exp(arg, True)
                 temp_assigns = [ast.Assign([name], exp) for (name, exp) in temps]
                 stmts = temp_assigns + [ast.Expr(ast.Call(ast.Name('print'), [new_arg], keywords))]
-            case ast.Expr(value):
+            case ast.Expr(value): # may have side effects in production
                 new_value, temps = self.rco_exp(value, False)
                 temp_assigns = [ast.Assign([name], exp) for (name, exp) in temps]
                 stmts = temp_assigns + [ast.Expr(new_value)]
@@ -93,6 +101,7 @@ class Compiler:
 
     def select_stmt(self, s: ast.stmt) -> List[x86.instr]:
         match s:
+            # Special Cases
             case ast.Assign([ast.Name(id1)], ast.BinOp(ast.Name(id2), ast.Add(), right)) if id1 == id2:
                 return [x86.Instr('addq', [self.select_arg(right), x86.Variable(id1)])]
             case ast.Assign([ast.Name(id)], ast.BinOp(left, ast.Add(), right)):
@@ -103,6 +112,7 @@ class Compiler:
             case ast.Assign([ast.Name(id)], ast.BinOp(left, ast.Sub(), right)):
                 return [x86.Instr('movq', [self.select_arg(left), x86.Variable(id)]),
                         x86.Instr('subq', [self.select_arg(right), x86.Variable(id)])]
+            # Common Cases
             case ast.Assign([ast.Name(id)], ast.UnaryOp(ast.USub(), arg)):
                 return [x86.Instr('movq', [self.select_arg(arg), x86.Variable(id)]),
                         x86.Instr('negq', [x86.Variable(id)])]
@@ -127,50 +137,106 @@ class Compiler:
 
     def select_instructions(self, p: ast.Module) -> x86.X86Program:
         stmts = [stmt for s in p.body for stmt in self.select_stmt(s)]
-        return x86.X86Program(stmts)
+        return x86.X86Program(stmts, 0)
 
     ############################################################################
     # Assign Homes
     ############################################################################
 
     def assign_homes_arg(self, a: x86.arg, home: Dict[x86.Variable, x86.arg]) -> x86.arg:
-        # YOUR CODE HERE
-        ...
+        match a:
+            case x86.Variable(_):
+                if not a in home:
+                    self.stack_space += 8
+                    home[a] = x86.Deref('rbp', -self.stack_space)
+                return home[a]
+            case x86.Reg(_) | x86.Immediate(_) as ri:
+                return ri
+            case _:
+                raise Exception('assign_homes_arg: unexpected ' + repr(a))
+
 
     def assign_homes_instr(self, i: x86.instr,
                            home: Dict[x86.Variable, x86.arg]) -> x86.instr:
-        # YOUR CODE HERE
-        ...
-
-    def assign_homes_instrs(self, ss: List[x86.instr],
+        match i:
+            case x86.Instr(op, [left, right]):
+                left = self.assign_homes_arg(left, home)
+                right = self.assign_homes_arg(right, home)
+                return x86.Instr(op, [left, right])
+            case x86.Instr(op, [arg]):
+                arg = self.assign_homes_arg(arg, home)
+                return x86.Instr(op, [arg])
+            case x86.Callq(_, _) as call:
+                return call
+            # case x86.Instr('pushq', [arg]):
+            #     ...
+            # case x86.Instr('popq', [arg]):
+            #     ...
+            # case x86.Instr('label', id):
+            #     ...
+            case _:
+                raise Exception('assign_homes_instr: unexpected ' + repr(i))
+                 
+        
+    def assign_homes_instrs(self, inss: List[x86.instr],
                             home: Dict[x86.Variable, x86.arg]) -> List[x86.instr]:
-        # YOUR CODE HERE
-        ...
-
+        instrs = []
+        for i in inss:
+            instrs.append(self.assign_homes_instr(i, home))
+        return instrs
+    
     def assign_homes(self, p: x86.X86Program) -> x86.X86Program:
-        # YOUR CODE HERE
-        ...
+        self.stack_space = 0
+        instrs = self.assign_homes_instrs(p.body, {})
+        return x86.X86Program(instrs, self.stack_space)
 
     ############################################################################
     # Patch Instructions
     ############################################################################
 
     def patch_instr(self, i: x86.instr) -> List[x86.instr]:
-        # YOUR CODE HERE
-        ...
+        match i:
+            case x86.Instr(op, [x86.Deref(_, _) as m1, x86.Deref(_, _) as m2]):
+                return [
+                    x86.Instr('movq', [m1, x86.Reg('rax')]),
+                    x86.Instr(op, [x86.Reg('rax'), m2]),
+                ]
+            case x86.Instr(op, [x86.Immediate(imm), x86.Deref(_, _) as m2]) if imm > (1 << 16):
+                return [
+                    x86.Instr('movq', [x86.Immediate(imm), x86.Reg('rax')]),
+                    x86.Instr(op, [x86.Reg('rax'), m2]),
+                ]
+            case x86.Instr(op, [x86.Deref(_, _) as m1, x86.Immediate(imm)]) if imm > (1 << 16):
+                return [
+                    x86.Instr('movq', [x86.Immediate(imm), x86.Reg('rax')]),
+                    x86.Instr(op, [m1, x86.Reg('rax')]),
+                ]
+            case _:
+                return [i]
+
 
     def patch_instrs(self, ss: List[x86.instr]) -> List[x86.instr]:
-        # YOUR CODE HERE
-        ...
+        return [instr for s in ss for instr in self.patch_instr(s)]
 
     def patch_instructions(self, p: x86.X86Program) -> x86.X86Program:
-        # YOUR CODE HERE
-        ...
-
+        instrs = self.patch_instrs(p.body)
+        return x86.X86Program(instrs, p.stack_space)
+    
     ############################################################################
     # Prelude & Conclusion
     ############################################################################
 
     def prelude_and_conclusion(self, p: x86.X86Program) -> x86.X86Program:
-        # YOUR CODE HERE
-        ...
+        sp = p.stack_space
+        sp = sp + (16 - (sp % 16)) # 16 bytes align
+        prelude = [
+            x86.Instr('pushq', [x86.Reg('rbp')]),
+            x86.Instr('movq', [x86.Reg('rsp'),x86.Reg('rbp')]),
+            x86.Instr('subq', [x86.Immediate(sp), x86.Reg('rsp')])
+        ]
+        conlusion = [
+            x86.Instr('addq', [x86.Immediate(sp), x86.Reg('rsp')]),
+            x86.Instr('popq', [x86.Reg('rbp')]),
+            x86.Instr('retq', [])
+        ]
+        return x86.X86Program(prelude + p.body + conlusion, sp)
