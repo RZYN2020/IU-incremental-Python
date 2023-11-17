@@ -1,16 +1,19 @@
-from .compiler import Compiler, CompilerConfig, Pass
+from .compiler import CompilerConfig, Pass
+from .compiler.compiler_register_allocator import Compiler
 from .interp import INTERPRETERS # type: ignore
 from .type import TYPE_CHECKERS # type: ignore
 from .x86.eval_x86 import interp_x86 # type: ignore
 from ast import parse
 import os
 
-compiler_: Compiler = Compiler.get_instance()
+compiler_: Compiler = Compiler()
 
+
+# maybe i should differentiate between the analysis and the transformation pass like llvm...
 LvarConfig: CompilerConfig = [
     Pass('remove_complex_operands', 'Lvar', 'Lvar', compiler_.remove_complex_operands),
     Pass('select_instructions', 'Lvar', 'X86var', compiler_.select_instructions),
-    Pass('assign_homes', 'X86var', 'X86var', compiler_.assign_homes),
+    Pass('allocate_registers', 'X86var', 'X86var', compiler_.allocate_registers),
     Pass('patch_instructions', 'X86', 'X86', compiler_.patch_instructions),
     Pass('prelude_and_conclusion', 'X86', 'X86', compiler_.prelude_and_conclusion)
 ]

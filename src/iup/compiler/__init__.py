@@ -1,6 +1,5 @@
 from typing import List, Any, Callable, Literal
 from dataclasses import dataclass
-from .compiler import Compiler # type: ignore
 
 PassName = Literal[ 'shrink', 'uniquify', 'reveal_functions', 'resolve', 'erase_types', 'cast_insert',
                 'lower_casts', 'differentiate_proxies', 'reveal_casts', 'convert_assignments',

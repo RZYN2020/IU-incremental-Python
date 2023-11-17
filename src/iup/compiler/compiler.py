@@ -1,5 +1,5 @@
 from typing import List, Dict, Tuple, ClassVar, Optional
-from iup.utils import generate_name
+from iup.utils import generate_name, align
 import iup.x86.x86_ast as x86
 import iup.x86.x86exp as x86exp
 import ast
@@ -40,20 +40,20 @@ class Compiler:
                 new_left, left_temps = self.rco_exp(left, True)
                 new_right, right_temps = self.rco_exp(right, True)
                 if need_atomic:
-                    temp = ast.Name(generate_name("temp"))
+                    temp = ast.Name(generate_name("_t"))
                     return (temp, left_temps + right_temps + [(temp, ast.BinOp(new_left, op, new_right))])
                 return (ast.BinOp(new_left, op, new_right), left_temps + right_temps)
             case ast.UnaryOp(ast.USub(), v):
                 new_v, temps = self.rco_exp(v, True)
                 if need_atomic:
-                    temp = ast.Name(generate_name("temp"))
+                    temp = ast.Name(generate_name("_t"))
                     return (temp, temps + [(temp, ast.UnaryOp(ast.USub(), new_v))])
                 return (ast.UnaryOp(ast.USub(), new_v), temps)
             case ast.Constant(value):
                 return (ast.Constant(value), [])
             case ast.Call(ast.Name('input_int'), [], keywords):
                 if need_atomic:
-                    temp = ast.Name(generate_name("temp"))
+                    temp = ast.Name(generate_name("_t"))
                     return (temp, [(temp, ast.Call(ast.Name('input_int'), [], keywords))])
                 return (ast.Call(ast.Name('input_int'), [], keywords), [])
             case _:
@@ -155,7 +155,6 @@ class Compiler:
             case _:
                 raise Exception('assign_homes_arg: unexpected ' + repr(a))
 
-
     def assign_homes_instr(self, i: x86.instr,
                            home: Dict[x86.Variable, x86.arg]) -> x86.instr:
         match i:
@@ -176,7 +175,6 @@ class Compiler:
             #     ...
             case _:
                 raise Exception('assign_homes_instr: unexpected ' + repr(i))
-                 
         
     def assign_homes_instrs(self, inss: List[x86.instr],
                             home: Dict[x86.Variable, x86.arg]) -> List[x86.instr]:
@@ -228,7 +226,7 @@ class Compiler:
 
     def prelude_and_conclusion(self, p: x86.X86Program) -> x86.X86Program:
         sp = p.stack_space
-        sp = sp + (16 - (sp % 16)) # 16 bytes align
+        sp = align(sp, 16)
         prelude = [
             x86.Instr('pushq', [x86.Reg('rbp')]),
             x86.Instr('movq', [x86.Reg('rsp'),x86.Reg('rbp')]),
