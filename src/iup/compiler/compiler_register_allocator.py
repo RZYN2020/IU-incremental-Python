@@ -1,113 +1,102 @@
 from ..utils.graph import UndirectedAdjList
 from ..utils.priority_queue import PriorityQueue
-from .compiler import Compiler as CompilerBase
-from ..utils.utils import align
-from typing import Tuple, Set, Dict
-from ast import *
-from iup.x86.x86_ast import *
+from ..utils.dict import TwoWayDict
+from typing import Any, Tuple, Set, Dict, List
+from .pass_manager import TransformPass, AnalysisPass, PassManager
+import iup.x86.x86_ast as x86
 from typing import Set, Dict, Tuple
 
 
-class TwoWayDict(dict):
-    def __setitem__(self, key, value):
-        # Remove any previous connections with these values
-        if key in self:
-            del self[key]
-        if value in self:
-            del self[value]
-        dict.__setitem__(self, key, value)
-        dict.__setitem__(self, value, key)
-
-    def __delitem__(self, key):
-        dict.__delitem__(self, self[key])
-        dict.__delitem__(self, key)
-
-    def __len__(self):
-        """Returns the number of connections"""
-        return dict.__len__(self) // 2
-
 reg_map = TwoWayDict({
-    0: Reg('rcx'),
-    1: Reg('rdx'),
-    2: Reg('rsi'),
-    3: Reg('rdi'),
-    4: Reg('r8'),
-    5: Reg('r9'),
-    6: Reg('r10'),
-    7: Reg('rbx'),
-    8: Reg('r12'),
-    9: Reg('r13'),
-    10: Reg('r14'),
-    -1: Reg('rax'),
-    -2: Reg('rsp'),
-    -3: Reg('rbp'),
-    -4: Reg('r11'),
-    -5: Reg('r15'),
+    0:  x86.Reg('rcx'),
+    1:  x86.Reg('rdx'),
+    2:  x86.Reg('rsi'),
+    3:  x86.Reg('rdi'),
+    4:  x86.Reg('r8'),
+    5:  x86.Reg('r9'),
+    6:  x86.Reg('r10'),
+    7:  x86.Reg('rbx'),
+    8:  x86.Reg('r12'),
+    9:  x86.Reg('r13'),
+    10: x86.Reg('r14'),
+    -1: x86.Reg('rax'),
+    -2: x86.Reg('rsp'),
+    -3: x86.Reg('rbp'),
+    -4: x86.Reg('r11'),
+    -5: x86.Reg('r15'),
 })
 
+callee_saved = [x86.Reg('rbx'), x86.Reg('r12'), x86.Reg('r13'), x86.Reg('r14'), x86.Reg('r15')]
 
-
-class Compiler(CompilerBase):
-    callee_saved = [Reg('rbx'), Reg('r12'), Reg('r13'), Reg('r14'), Reg('r15')]
+###########################################################################
+# Uncover Live
+###########################################################################
+class UncoverLivePass(AnalysisPass):
     
-
-    ###########################################################################
-    # Uncover Live
-    ###########################################################################
+    name = "uncover_live"
 
     # decidebale version of liveness analysis
-    
-    def read_vars(self, i: instr) -> Set[location]:
+
+    @staticmethod
+    def read_vars(i: x86.instr) -> Set[x86.location]:
         match i:
-            case Instr(_, [Reg(_) | Variable(_) as a, _]): # binary op
+            case x86.Instr(_, [x86.Reg(_) | x86.Variable(_) as a, _]):  # binary op
                 return {a}
-            case Instr(_, [a]): # unary op
-                return {a}
-            case Callq(_, _):
+            case x86.Instr(_, [a]):  # unary op
+                return {a} #type: ignore
+            case x86.Callq(_, _):
                 # suppose arity of func 1 (we just have print_int currently)
-                return {Reg('rdi')}
+                return {x86.Reg('rdi')}
             case _:
                 return set()
-            
+
     # location must be Variable or Register
-    def write_vars(self, i: instr) -> Set[location]:
+    @staticmethod
+    def write_vars(i: x86.instr) -> Set[x86.location]:
         match i:
-            case Instr(_, [_, b]): # binary op
-                return {b}
-            case Instr(_, [a]): # unary op
-                return {a}
-            case Callq(_, _):
+            case x86.Instr(_, [_, b]):  # binary op
+                return {b} #type: ignore
+            case x86.Instr(_, [a]):  # unary op
+                return {a} #type: ignore
+            case x86.Callq(_, _):
                 # all caller-saved registers
                 return {
-                    Reg("rax"),
-                    Reg("rcx"),
-                    Reg("rdx"),
-                    Reg("rsi"),
-                    Reg("rdi"),
-                    Reg("r8"),
-                    Reg("r9"),
-                    Reg("r10"),
-                    Reg("r11"),
+                    x86.Reg("rax"),
+                    x86.Reg("rcx"),
+                    x86.Reg("rdx"),
+                    x86.Reg("rsi"),
+                    x86.Reg("rdi"),
+                    x86.Reg("r8"),
+                    x86.Reg("r9"),
+                    x86.Reg("r10"),
+                    x86.Reg("r11"),
                 }
             case _:
                 return set()
 
-    def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
-        live_vars = {}
-        cur_live = set()
-        for i in reversed(p.body):
+    def run(self, p: x86.X86Program, manager: PassManager) -> Dict[x86.instr, Set[x86.location]]: #type: ignore
+        live_vars: Dict[x86.instr, Set[x86.location]] = {}
+        cur_live: Set[x86.location] = set()
+        for i in reversed(p.body): #type: ignore
+            i : x86.instr 
             live_vars[i] = cur_live
             reads = self.read_vars(i)
             writes = self.write_vars(i)
             cur_live = cur_live.difference(writes).union(reads)
         return live_vars
-        
-    ############################################################################
-    # Build Interference
-    ############################################################################
 
-    def build_interference(self, p: X86Program,
-                           live_after: Dict[instr, Set[location]]) -> UndirectedAdjList:
+
+############################################################################
+# Build Interference
+############################################################################
+class BuildInterferencePass(AnalysisPass):
+    
+    name = "build_interference"
+    
+    def run(self, p: x86.X86Program, manager: PassManager) -> UndirectedAdjList: #type: ignore
+        
+        live_after = manager.get_result("uncover_live")
+        
         graph = UndirectedAdjList()
         # simple O(n^2) implementation
         # for i in p.body:
@@ -115,147 +104,102 @@ class Compiler(CompilerBase):
         #         for b in live_after[i]:
         #             if a != b:
         #                 graph.add_edge(a, b)
-        
+
         # O(n) implementation
         for i in p.body:
             match i:
-                case Instr('movq', [Reg(_) | Variable(_) as a, Reg(_) | Variable(_) as b]):
+                case x86.Instr('movq', [x86.Reg(_) | x86.Variable(_) as a, x86.Reg(_) | x86.Variable(_) as b]):
                     lives = live_after[i]
                     for l in lives:
                         if a != l and b != l:
-                            if not graph.has_edge(a, l):
-                                graph.add_edge(a, l)
+                            if not graph.has_edge(a, l): #type: ignore
+                                graph.add_edge(a, l) #type: ignore
                 case _:
-                    writes = self.write_vars(i)
-                    lives = live_after[i]       
-                    for a in writes:    
+                    writes = UncoverLivePass.write_vars(i) #type: ignore
+                    lives = live_after[i]
+                    for a in writes:
                         for b in lives:
                             if a != b:
-                                if not graph.has_edge(a, b):
-                                    graph.add_edge(a, b)
+                                if not graph.has_edge(a, b): #type: ignore
+                                    graph.add_edge(a, b) #type: ignore
 
         return graph
 
-    ############################################################################
-    # Allocate Registers
-    ############################################################################
-
+############################################################################
+# Allocate Registers
+############################################################################
+class AllocateRegPass(TransformPass):
+    
+    name = 'allocate_registers'
+    source = 'X86'
+    target = 'X86' 
+    
+    
     # Returns the coloring and the set of spilled variables.
     def color_graph(self, graph: UndirectedAdjList,
-                    variables: Set[location]) -> Tuple[Dict[location, int], Set[location]]:
-                
-        colors = dict({v: k for k, v in reg_map.items()})
-        spilled = set()
+                    variables: Set[x86.location]) -> Tuple[Dict[x86.location, int], Set[x86.location]]:
 
-        def saturation(x):
-            return len([p for p in graph.out[x.key] if p in colors])
-        
-        worklist = PriorityQueue(lambda x, y: saturation(x) < saturation(y))
+        colors: Dict[x86.location, int] = dict({v: k for k, v in reg_map.items()}) #type: ignore
+        spilled: Set[x86.location] = set()
+
+        def saturation(x): #type: ignore
+            return len([p for p in graph.out[x.key] if p in colors]) #type: ignore
+
+        worklist = PriorityQueue(lambda x, y: saturation(x) < saturation(y)) #type: ignore
         for p in variables:
-            worklist.push(p)
-        
+            worklist.push(p) #type: ignore
+
         while not worklist.empty():
-            p = worklist.pop()
-            adjs = [colors[adj] for adj in graph.out[p] if adj in colors]
+            p = worklist.pop()  #type: ignore
+            adjs = [colors[adj] for adj in graph.out[p] if adj in colors] #type: ignore
             allocp = 0
 
             # we can use Move Biasing here to remove more move operations
             while allocp in adjs:
                 allocp += 1
-            colors[p] = allocp
+            colors[p] = allocp  #type: ignore
             if allocp >= 11:
-                spilled.add(p)
-        
-        return colors, spilled
-        
+                spilled.add(p)  #type: ignore
 
-    def allocate_registers(self, p: X86Program) -> X86Program:
-        graph = self.build_interference(p, self.uncover_live(p))
-        vars =  set([item for sublist in [self.write_vars(i) for i in p.body] for item in sublist if isinstance(item, Variable)])
+        return colors, spilled
+
+    def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
+        graph = manager.get_result('build_interference')
+        vars = set([item for sublist in [UncoverLivePass.write_vars(i) for i in p.body] #type: ignore
+                   for item in sublist if isinstance(item, x86.Variable)])
         for v in vars:
             graph.add_vertex(v)
-        colors, spilled = self.color_graph(graph, vars)
-        
-        def alloc_reg(a):
+        colors, spilled = self.color_graph(graph, vars) #type: ignore
+
+        def alloc_reg(a: Any) -> x86.Reg | x86.Deref:
             if a in spilled:
-                return Deref('rbp', - 8 * (colors[a] - 11))
+                return x86.Deref('rbp', - 8 * (colors[a] - 11))
             elif a in colors:
-                return reg_map[colors[a]]
+                return reg_map[colors[a]] #type: ignore
             else:
                 return a
-        
-        instrs = []
+
+        instrs: List[x86.instr] = []
         for i in p.body:
             match i:
-                case Instr(op, [a, b]):
-                    instrs.append(Instr(op, [alloc_reg(a), alloc_reg(b)]))
-                case Instr(op, [a]):
-                    instrs.append(Instr(op, [alloc_reg(a)]))
+                case x86.Instr(op, [a, b]):
+                    instrs.append(x86.Instr(op, [alloc_reg(a), alloc_reg(b)]))
+                case x86.Instr(op, [a]):
+                    instrs.append(x86.Instr(op, [alloc_reg(a)]))
                 case _:
-                    instrs.append(i)
-        
-        regs = set()
+                    instrs.append(i)  #type: ignore
+
+        regs: Set[x86.Reg] = set()
         for i in instrs:
             match i:
-                case Instr(_, [Reg(_) as a, *_]):
+                case x86.Instr(_, [x86.Reg(_) as a, *_]):
                     regs.add(a)
-                case Instr(_, [_, Reg(_) as a]):
+                case x86.Instr(_, [_, x86.Reg(_) as a]):
                     regs.add(a)
                 case _:
                     pass
-        
-        used_callee = [r for r in regs if r in self.callee_saved]
-        return X86Program(instrs, (len(spilled) + len(used_callee)) * 8, used_callee)
-        
 
-    ############################################################################
-    # Assign Homes
-    ############################################################################
-
-    def assign_homes(self, pseudo_x86: X86Program) -> X86Program:
-        return pseudo_x86
-
-    ###########################################################################
-    # Patch Instructions
-    ###########################################################################
-
-    def patch_instructions(self, p: X86Program) -> X86Program:
-        p = super().patch_instructions(p)
-        instrs = []
-        for i in p.body:
-            match i:
-                case Instr('movq', [a, b]):
-                    if a != b:
-                        instrs.append(i)
-                case _:
-                    instrs.append(i)
-        return X86Program(instrs, p.stack_space, p.used_callee)
-
-    ###########################################################################
-    # Prelude & Conclusion
-    ###########################################################################
-
-    def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        sp = p.stack_space
-        offset = align(sp, 16) - 8 * len(p.used_callee)
-        prelude = [
-            Instr('pushq', [Reg('rbp')]),
-            Instr('movq', [Reg('rsp'),Reg('rbp')])] \
-        + [ Instr['pushq', [r]] for r in p.used_callee]
-        
-        if offset > 0:
-            prelude += [ Instr('subq', [Immediate(offset), Reg('rsp')])]
-            conlusion= [Instr('addq', [Immediate(offset), Reg('rsp')])]
-        else:
-            conlusion = []
-            
-        conlusion += \
-          [ Instr('popq', [r]) for r in reversed(p.used_callee)] \
-        + [ Instr('popq', [Reg('rbp')]),
-            Instr('retq', [])
-        ]
-        return X86Program(prelude + p.body + conlusion, sp)
-
-
+        used_callee = [r for r in regs if r in callee_saved]
+        return x86.X86Program(instrs, (len(spilled) + len(used_callee)) * 8, used_callee)
 
 

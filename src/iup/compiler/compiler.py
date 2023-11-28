@@ -1,37 +1,28 @@
-from typing import List, Dict, Tuple, ClassVar, Optional
+from typing import List, Dict, Tuple
 from iup.utils import generate_name, align
 import iup.x86.x86_ast as x86
-import iup.x86.x86exp as x86exp
 import ast
+from .pass_manager import TransformPass, PassManager
 
 Binding = Tuple[ast.Name, ast.expr]
 Temporaries = List[Binding]
 
-class Compiler:
+
+############################################################################
+# Remove Complex Operands
+############################################################################
+class RCOPass(TransformPass):
+
+    name = 'remove_complex_operands'
+    source = 'Lvar'
+    target = 'Lvar'
     
-    __instance: ClassVar[Optional['Compiler']] = None
-
-    def __init__(self):
-        if Compiler.__instance is not None:
-            raise Exception("Compiler instance already exists")
-        else:
-            Compiler.__instance = self
-
-    @staticmethod
-    def get_instance() -> 'Compiler':
-        if Compiler.__instance is None:
-            Compiler.__instance = Compiler()
-        return Compiler.__instance
-
-    ############################################################################
-    # Remove Complex Operands
-    ############################################################################
-
     '''
     Flatten Expression.
     Parameters:	
         need_atomic: if return expr should be one of [const, name]
     '''
+
     def rco_exp(self, e: ast.expr, need_atomic: bool) -> Tuple[ast.expr, Temporaries]:
         match e:
             case ast.Name(id):
@@ -62,34 +53,47 @@ class Compiler:
     '''
     Convert to 3AC actually...
     '''
+
     def rco_stmt(self, s: ast.stmt) -> list[ast.stmt]:
         stmts: list[ast.stmt]
         temp_assigns: list[ast.stmt]
         match s:
             case ast.Assign([ast.Name(id)], value):
                 new_value, temps = self.rco_exp(value, False)
-                temp_assigns = [ast.Assign([name], exp) for (name, exp) in temps]
-                stmts =  temp_assigns + [ast.Assign([ast.Name(id)], new_value)]
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps]
+                stmts = temp_assigns + [ast.Assign([ast.Name(id)], new_value)]
             case ast.Expr(ast.Call(ast.Name('print'), [arg], keywords)):
                 new_arg, temps = self.rco_exp(arg, True)
-                temp_assigns = [ast.Assign([name], exp) for (name, exp) in temps]
-                stmts = temp_assigns + [ast.Expr(ast.Call(ast.Name('print'), [new_arg], keywords))]
-            case ast.Expr(value): # may have side effects in production
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps]
+                stmts = temp_assigns + \
+                    [ast.Expr(ast.Call(ast.Name('print'), [new_arg], keywords))]
+            case ast.Expr(value):  # may have side effects in production
                 new_value, temps = self.rco_exp(value, False)
-                temp_assigns = [ast.Assign([name], exp) for (name, exp) in temps]
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps]
                 stmts = temp_assigns + [ast.Expr(new_value)]
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
         return stmts
 
-    def remove_complex_operands(self, p: ast.Module) -> ast.Module:
-        stmts = [stmt for s in p.body for stmt in self.rco_stmt(s)]
+    def run(self, prog: ast.Module, manager: PassManager) -> ast.Module: #type: ignore
+        stmts = [stmt for s in prog.body for stmt in self.rco_stmt(s)]
         return ast.Module(stmts)
 
-    ############################################################################
-    # Select Instructions
-    ############################################################################
 
+
+############################################################################
+# Select Instructions
+############################################################################
+class SelectInstrPass(TransformPass):
+
+    name = 'select_instructions'
+    source = 'Lvar'
+    target = 'X86'
+    
+    
     def select_arg(self, e: ast.expr) -> x86.arg:
         match e:
             case ast.Constant(value):
@@ -128,21 +132,28 @@ class Compiler:
                 return [x86.Callq('read_int', 1)]
             case ast.Expr(ast.Constant | ast.Name):
                 return []
-            case ast.Expr(ast.BinOp(ast.Constant | ast.Name, _ , ast.Constant | ast.Name)):
+            case ast.Expr(ast.BinOp(ast.Constant | ast.Name, _, ast.Constant | ast.Name)):
                 return []
             case ast.Expr(ast.UnaryOp(ast.USub(), ast.Constant | ast.Name)):
                 return []
             case _:
                 raise Exception('select_stmt: unexpected ' + repr(s))
 
-    def select_instructions(self, p: ast.Module) -> x86.X86Program:
+    def run(self, p: ast.Module, manager: PassManager) -> x86.X86Program: #type: ignore
         stmts = [stmt for s in p.body for stmt in self.select_stmt(s)]
         return x86.X86Program(stmts, 0)
 
-    ############################################################################
-    # Assign Homes
-    ############################################################################
 
+
+############################################################################
+# Assign Homes
+############################################################################
+class AssignHomePass(TransformPass):
+
+    name = 'assign_homes'
+    source = 'X86'
+    target = 'X86'
+    
     def assign_homes_arg(self, a: x86.arg, home: Dict[x86.Variable, x86.arg]) -> x86.arg:
         match a:
             case x86.Variable(_):
@@ -175,23 +186,30 @@ class Compiler:
             #     ...
             case _:
                 raise Exception('assign_homes_instr: unexpected ' + repr(i))
-        
+
     def assign_homes_instrs(self, inss: List[x86.instr],
                             home: Dict[x86.Variable, x86.arg]) -> List[x86.instr]:
-        instrs = []
+        instrs: List[x86.instr] = []
         for i in inss:
             instrs.append(self.assign_homes_instr(i, home))
         return instrs
-    
-    def assign_homes(self, p: x86.X86Program) -> x86.X86Program:
+
+    def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
         self.stack_space = 0
-        instrs = self.assign_homes_instrs(p.body, {})
+        instrs = self.assign_homes_instrs(p.body, {}) #type: ignore
         return x86.X86Program(instrs, self.stack_space)
 
-    ############################################################################
-    # Patch Instructions
-    ############################################################################
 
+
+############################################################################
+# Patch Instructions
+############################################################################
+class PatchInsPass(TransformPass):
+
+    name = 'patch_instructions'
+    source = 'X86'
+    target = 'X86'
+    
     def patch_instr(self, i: x86.instr) -> List[x86.instr]:
         match i:
             case x86.Instr(op, [x86.Deref(_, _) as m1, x86.Deref(_, _) as m2]):
@@ -212,29 +230,51 @@ class Compiler:
             case _:
                 return [i]
 
-
     def patch_instrs(self, ss: List[x86.instr]) -> List[x86.instr]:
         return [instr for s in ss for instr in self.patch_instr(s)]
 
-    def patch_instructions(self, p: x86.X86Program) -> x86.X86Program:
-        instrs = self.patch_instrs(p.body)
-        return x86.X86Program(instrs, p.stack_space)
-    
-    ############################################################################
-    # Prelude & Conclusion
-    ############################################################################
+    def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
+        instrs = self.patch_instrs(p.body) #type: ignore
+        pinstrs: List[x86.instr] = []
+        for i in instrs:
+            match i:
+                case x86.Instr('movq', [a, b]):
+                    if a != b:
+                        pinstrs.append(i)
+                case _:
+                    pinstrs.append(i)
+        return x86.X86Program(pinstrs, p.stack_space)
 
-    def prelude_and_conclusion(self, p: x86.X86Program) -> x86.X86Program:
+
+
+############################################################################
+# Prelude & Conclusion
+############################################################################
+class PreConPass(TransformPass):
+    
+    name = 'prelude_and_conclusion'
+    source = 'X86'
+    target = 'X86'
+    
+    def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
         sp = p.stack_space
-        sp = align(sp, 16)
+        offset = align(sp, 16) - 8 * len(p.used_callee)
         prelude = [
             x86.Instr('pushq', [x86.Reg('rbp')]),
-            x86.Instr('movq', [x86.Reg('rsp'),x86.Reg('rbp')]),
-            x86.Instr('subq', [x86.Immediate(sp), x86.Reg('rsp')])
-        ]
-        conlusion = [
-            x86.Instr('addq', [x86.Immediate(sp), x86.Reg('rsp')]),
-            x86.Instr('popq', [x86.Reg('rbp')]),
-            x86.Instr('retq', [])
-        ]
-        return x86.X86Program(prelude + p.body + conlusion, sp)
+            x86.Instr('movq', [x86.Reg('rsp'), x86.Reg('rbp')])] \
+            + [x86.Instr('pushq', [r]) for r in p.used_callee]
+
+        if offset > 0:
+            prelude += [x86.Instr('subq', [x86.Immediate(offset), x86.Reg('rsp')])]
+            conlusion = [x86.Instr('addq', [x86.Immediate(offset), x86.Reg('rsp')])]
+        else:
+            conlusion = []
+
+        conlusion += \
+            [x86.Instr('popq', [r]) for r in reversed(p.used_callee)] \
+            + [x86.Instr('popq', [x86.Reg('rbp')]),
+               x86.Instr('retq', [])
+               ]
+        return x86.X86Program(prelude + p.body + conlusion, sp) #type: ignore
+
+

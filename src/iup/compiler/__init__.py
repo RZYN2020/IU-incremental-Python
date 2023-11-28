@@ -1,25 +1,31 @@
-from typing import List, Any, Callable, Literal
-from dataclasses import dataclass
+from .pass_manager import *
+from .compiler_register_allocator import *
+from .compiler import *
 
-PassName = Literal[ 'shrink', 'uniquify', 'reveal_functions', 'resolve', 'erase_types', 'cast_insert',
-                'lower_casts', 'differentiate_proxies', 'reveal_casts', 'convert_assignments',
-                'convert_to_closures', 'limit_functions', 'expose_allocation', 'remove_complex_operands',
-                'explicate_control',
-                # below are passes that must be included in the compiler
-                'select_instructions',
-                'assign_homes',
-                'patch_instructions',
-                'prelude_and_conclusion',
-              ]
+ALL_PASSES_LIST: List[Pass] = [
+    RCOPass(),
+    SelectInstrPass(),
+    AllocateRegPass(),
+    AssignHomePass(),
+    PatchInsPass(),
+    PreConPass(),
 
-Language = Literal['Lint', 'Lvar', 'X86var', 'X86']
+    UncoverLivePass(),
+    BuildInterferencePass()
+]
 
-@dataclass
-class Pass:
-    name: PassName
-    source: Language
-    target: Language
-    transform: Callable[[Any], Any]
+ALL_PASSES: Dict[PassName, Pass] = {p.name: p for p in ALL_PASSES_LIST}
 
 
-CompilerConfig = List[Pass]
+LvarTransforms: List[TransformPass] = [
+    RCOPass(),
+    SelectInstrPass(),
+    AllocateRegPass(),
+    PatchInsPass(),
+    PreConPass()
+]
+LvarAnalyses: List[AnalysisPass] = [
+    UncoverLivePass(),
+    BuildInterferencePass()
+]
+LvarManager = PassManager(LvarTransforms, LvarAnalyses)
