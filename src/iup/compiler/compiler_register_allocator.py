@@ -2,9 +2,9 @@ from ..utils.graph import UndirectedAdjList
 from ..utils.priority_queue import PriorityQueue
 from ..utils.dict import TwoWayDict
 from typing import Any, Tuple, Set, Dict, List
-from .pass_manager import TransformPass, AnalysisPass, PassManager
 import iup.x86.x86_ast as x86
 from typing import Set, Dict, Tuple
+from .pass_manager import AnalysisPass, TransformPass, PassManager
 
 
 reg_map = TwoWayDict({
@@ -200,6 +200,9 @@ class AllocateRegPass(TransformPass):
                     pass
 
         used_callee = [r for r in regs if r in callee_saved]
-        return x86.X86Program(instrs, (len(spilled) + len(used_callee)) * 8, used_callee)
+        prog = x86.X86Program(instrs)
+        prog.stack_space = (len(spilled) + len(used_callee)) * 8
+        prog.used_callee = used_callee
+        return prog
 
 

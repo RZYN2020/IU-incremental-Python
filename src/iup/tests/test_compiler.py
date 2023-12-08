@@ -19,9 +19,8 @@ class TestPassManager(PassManager):
         self.prog = prog
         
         for trans in self.transforms:
-            lang = trans.source
-            if TYPE_CHECKERS.get(lang) is not None:
-                TYPE_CHECKERS[lang].type_check(self.prog) #type: ignore
+            if trans.source != 'X86':
+                TYPE_CHECKERS[self.lang].type_check(self.prog) #type: ignore
             self.prog = trans.run(self.prog, self)
             check_pass(trans.target, self.prog, self.test_dir, self.test, False)
         
@@ -31,6 +30,7 @@ class TestPassManager(PassManager):
 LvarTestManager = TestPassManager(LvarTransforms, LvarAnalyses)
     
 compiler_test_configs: List[Tuple[TestPassManager, str]] = [
+    (LvarTestManager, os.path.join(TEST_BASE, 'var')),
     (LvarTestManager, os.path.join(TEST_BASE, 'var')),
 ]
 

@@ -29,3 +29,20 @@ LvarAnalyses: List[AnalysisPass] = [
     BuildInterferencePass()
 ]
 LvarManager = PassManager(LvarTransforms, LvarAnalyses)
+
+
+LifTransforms: List[TransformPass] = [
+    ShrinkPass(),
+    RCOPass(),
+    SelectInstrPass(),
+    AllocateRegPass(),
+    PatchInsPass(),
+    PreConPass()
+]
+LifAnalyses: List[AnalysisPass] = [
+    UncoverLivePass(),
+    BuildInterferencePass()
+]
+LifManager = PassManager(LifTransforms, LifAnalyses)
+
+

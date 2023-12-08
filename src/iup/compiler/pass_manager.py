@@ -6,7 +6,7 @@ from abc import ABC
 import iup.x86.x86_ast as x86
 
 PassName: TypeAlias = str
-Language = Literal['Lint', 'Lvar', 'X86var', 'X86']
+Language = Literal['Py', 'X86']
 Program = ast.Module | x86.X86Program
 
 
@@ -43,8 +43,9 @@ class PassManager(TransformPass):
     analyses: Dict[PassName, AnalysisPass]
     cache: Dict[PassName, Any]
     prog: Program
+    lang: str
     
-    def __init__(self, transforms: List[TransformPass], analyses: List[AnalysisPass]) -> None:
+    def __init__(self, transforms: List[TransformPass], analyses: List[AnalysisPass], lang='Lvar') -> None:
         self.transforms = transforms
         self.source = transforms[0].source
         self.target = transforms[-1].target
@@ -52,6 +53,7 @@ class PassManager(TransformPass):
         for p in analyses:
             self.analyses[p.name] = p
         self.cache = {}
+        self.lang = lang
 
     
     def invalidate(self, passes: List[PassName]):

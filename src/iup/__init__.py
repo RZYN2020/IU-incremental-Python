@@ -12,7 +12,7 @@ def compile(source: str, target: str, manager: PassManager, emulate_x86: bool = 
         program = parse(file.read())
         
     assert manager.target == 'X86'
-    TYPE_CHECKERS[manager.source].type_check(program)
+    TYPE_CHECKERS[manager.lang].type_check(program)
     
     program = manager.run(program, None) #type: ignore
 

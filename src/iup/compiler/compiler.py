@@ -7,15 +7,27 @@ from .pass_manager import TransformPass, PassManager
 Binding = Tuple[ast.Name, ast.expr]
 Temporaries = List[Binding]
 
+############################################################################
+# Shrink Pass (convert and/or to if)
+############################################################################
+class ShrinkPass(TransformPass):
 
+    name = 'shrink'
+    source = 'Py'
+    target = 'Py'
+    
+    def run(self, prog: ast.Module, manager: PassManager) -> ast.Module:
+        return prog
+    
+ 
 ############################################################################
 # Remove Complex Operands
 ############################################################################
 class RCOPass(TransformPass):
 
     name = 'remove_complex_operands'
-    source = 'Lvar'
-    target = 'Lvar'
+    source = 'Py'
+    target = 'Py'
     
     '''
     Flatten Expression.
@@ -90,7 +102,7 @@ class RCOPass(TransformPass):
 class SelectInstrPass(TransformPass):
 
     name = 'select_instructions'
-    source = 'Lvar'
+    source = 'Py'
     target = 'X86'
     
     
@@ -141,7 +153,7 @@ class SelectInstrPass(TransformPass):
 
     def run(self, p: ast.Module, manager: PassManager) -> x86.X86Program: #type: ignore
         stmts = [stmt for s in p.body for stmt in self.select_stmt(s)]
-        return x86.X86Program(stmts, 0)
+        return x86.X86Program(stmts)
 
 
 
@@ -243,7 +255,11 @@ class PatchInsPass(TransformPass):
                         pinstrs.append(i)
                 case _:
                     pinstrs.append(i)
-        return x86.X86Program(pinstrs, p.stack_space)
+                    
+        prog = x86.X86Program(pinstrs)
+        prog.stack_space = p.stack_space
+        prog.used_callee = []
+        return prog
 
 
 
@@ -275,6 +291,9 @@ class PreConPass(TransformPass):
             + [x86.Instr('popq', [x86.Reg('rbp')]),
                x86.Instr('retq', [])
                ]
-        return x86.X86Program(prelude + p.body + conlusion, sp) #type: ignore
+            
+        prog = x86.X86Program(prelude + p.body + conlusion)
+        prog.stack_space = sp
+        return prog
 
 
