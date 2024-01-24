@@ -111,7 +111,7 @@ class BuildInterferencePass(AnalysisPass):
                 case x86.Instr('movq', [x86.Reg(_) | x86.Variable(_) as a, x86.Reg(_) | x86.Variable(_) as b]):
                     lives = live_after[i]
                     for l in lives:
-                        if a != l and b != l:
+                        if a != l and b != l: # As long as no write to a/b, a and b don't inference each other.
                             if not graph.has_edge(a, l): #type: ignore
                                 graph.add_edge(a, l) #type: ignore
                 case _:

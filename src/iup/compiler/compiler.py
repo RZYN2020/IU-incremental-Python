@@ -1,8 +1,12 @@
+import select
 from typing import List, Dict, Tuple
-from iup.utils import generate_name, align
+
+from pytest import mark
+from iup.utils import generate_name, align, Begin
+from iup.utils.utils import Goto, label_name, CProgram
 import iup.x86.x86_ast as x86
 import ast
-from .pass_manager import TransformPass, PassManager
+from iup.compiler.pass_manager import TransformPass, PassManager
 
 Binding = Tuple[ast.Name, ast.expr]
 Temporaries = List[Binding]
@@ -16,8 +20,54 @@ class ShrinkPass(TransformPass):
     source = 'Py'
     target = 'Py'
     
+    def shrink_exp(self, e: ast.expr) -> ast.expr:
+        match e:
+            case ast.Name(_):
+                return e
+            case ast.BinOp(left, op, right):
+                new_left = self.shrink_exp(left)
+                new_right = self.shrink_exp(right)
+                return ast.BinOp(new_left, op, new_right)
+            case ast.BoolOp(ast.And(), [left, right]):
+                new_left = self.shrink_exp(left)
+                new_right = self.shrink_exp(right)
+                return ast.IfExp(new_left, new_right, ast.Constant(False))
+            case ast.BoolOp(ast.Or(), [left, right]):
+                new_left = self.shrink_exp(left)
+                new_right = self.shrink_exp(right)
+                return ast.IfExp(new_left, ast.Constant(True), new_right)
+            case ast.UnaryOp(ast.USub(), v):
+                return ast.UnaryOp(ast.USub(), self.shrink_exp(v))
+            case ast.Constant(_) | ast.Call(ast.Name('input_int'), [], _) | ast.IfExp(_,_,_):
+                return e
+            case ast.Compare(left, [op], [right]):
+                return e
+            case _:
+                raise Exception('error in shrink_exp, unexpected ' + repr(e))
+    
+    def shrink_stmt(self, s: ast.stmt) -> ast.stmt:
+        
+        match s:
+            case ast.Assign([ast.Name(id)], value):
+                return ast.Assign([ast.Name(id)], self.shrink_exp(value))
+            case ast.Expr(ast.Call(ast.Name('print'), [arg], keywords)):
+                return ast.Expr(ast.Call(ast.Name('print'), [self.shrink_exp(arg)], keywords))
+            case ast.Expr(value):  # may have side effects in production
+                return ast.Expr(self.shrink_exp(value))
+            # tail of the basic block
+            case ast.If(test, body, orelse):
+                new_test = self.shrink_exp(test)
+                new_body = [self.shrink_stmt(stmt) for stmt in body]
+                new_orelse = [self.shrink_stmt(stmt) for stmt in orelse]
+                return ast.If(new_test, new_body, new_orelse)
+            case _:
+                raise Exception('rco_stmt: unexpected ' + repr(s))
+    
+    # assume just one block currenctly
     def run(self, prog: ast.Module, manager: PassManager) -> ast.Module:
-        return prog
+        stmts = [self.shrink_stmt(stmt) for stmt in prog.body]
+        return ast.Module(stmts)
+            
     
  
 ############################################################################
@@ -32,7 +82,7 @@ class RCOPass(TransformPass):
     '''
     Flatten Expression.
     Parameters:	
-        need_atomic: if return expr should be one of [const, name]
+        need_atomic: if return expr should be one of [const, name], determined by the corresponding x86 instr
     '''
 
     def rco_exp(self, e: ast.expr, need_atomic: bool) -> Tuple[ast.expr, Temporaries]:
@@ -59,6 +109,44 @@ class RCOPass(TransformPass):
                     temp = ast.Name(generate_name("_t"))
                     return (temp, [(temp, ast.Call(ast.Name('input_int'), [], keywords))])
                 return (ast.Call(ast.Name('input_int'), [], keywords), [])
+            case ast.IfExp(test, body, orelse):
+                new_test, temps1 = self.rco_exp(test, False)
+                test_init: list[ast.stmt] = [ast.Assign([name], exp)
+                                for (name, exp) in temps1]
+                if len(test_init) != 0:
+                    new_test = Begin(test_init, new_test)
+                else:
+                    new_test = new_test
+                
+                new_body, temps2 = self.rco_exp(body, False) 
+                body_stmts: list[ast.stmt] = [ast.Assign([name], exp)
+                                for (name, exp) in temps2]
+                if len(body_stmts) != 0:
+                    new_body = Begin(body_stmts, new_body)
+                else:
+                    new_body = new_body
+                
+                new_orelse, temps3 = self.rco_exp(orelse, False) 
+                orelse_stmts: list[ast.stmt] = [ast.Assign([name], exp)
+                                for (name, exp) in temps3]
+                if len(orelse_stmts) != 0:
+                    new_orelse = Begin(orelse_stmts, new_orelse)
+                else:
+                    new_orelse = new_orelse
+                
+                if need_atomic:
+                    temp = ast.Name(generate_name("_t"))
+                    return (temp, [(temp, ast.IfExp(new_test, new_body, new_orelse))])
+                
+                return ast.IfExp(new_test, new_body, new_orelse), []
+            
+            case ast.Compare(left, [op], [right]):
+                new_left, left_temps = self.rco_exp(left, True)
+                new_right, right_temps = self.rco_exp(right, True)
+                if need_atomic:
+                    temp = ast.Name(generate_name("_t"))
+                    return (temp, left_temps + right_temps + [(temp, ast.Compare(new_left, [op], [new_right]))])
+                return (ast.Compare(new_left, [op], [new_right]), left_temps + right_temps)
             case _:
                 raise Exception('error in interp_exp, unexpected ' + repr(e))
 
@@ -86,6 +174,13 @@ class RCOPass(TransformPass):
                 temp_assigns = [ast.Assign([name], exp)
                                 for (name, exp) in temps]
                 stmts = temp_assigns + [ast.Expr(new_value)]
+            case ast.If(test, body, orelse):
+                new_test, temps = self.rco_exp(test, False)
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps]
+                new_body = [stmt for s in body for stmt in self.rco_stmt(s)]
+                new_orelse = [stmt for s in orelse for stmt in self.rco_stmt(s)]
+                stmts = temp_assigns + [ast.If(new_test, new_body, new_orelse)]
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
         return stmts
@@ -97,9 +192,128 @@ class RCOPass(TransformPass):
 
 
 ############################################################################
+# Explicate Control (Lif)
+############################################################################
+
+'''
+Change Ifs to Gotos
+(And make every if corresponding to a compare)
+'''
+class ExplicateControlPass(TransformPass):
+    name = 'explicate_control'
+    source = 'Py'
+    target = 'CLike'
+    
+    def create_block(self, stmts: list[ast.stmt], basick_blocks: dict[str, list[ast.stmt]]) -> list[ast.stmt]: 
+        match stmts:
+            case [Goto(_)]:
+                return stmts
+            case _:
+                label = label_name(generate_name('block'))
+                basick_blocks[label] = stmts
+                return [Goto(label)]
+    
+    def explicate_effect(self, e, cont, basic_blocks) -> list[ast.stmt]:
+        match e:
+            case ast.IfExp(test, body, orelse):
+                curr = self.create_block(cont, basic_blocks)
+                new_body = self.explicate_effect(body, curr, basic_blocks) # new block
+                new_orelse = self.explicate_effect(orelse, curr, basic_blocks)
+                return self.explicate_pred(test, new_body, new_orelse, basic_blocks)
+            case ast.Call(func, args):
+                return [ast.Expr(e)] + cont
+            case Begin(body, result):
+                for s in reversed(body):
+                    cont = self.explicate_stmt(s, cont, basic_blocks)
+                return cont
+            case _:
+                return cont
+                
+    def explicate_assign(self, rhs, lhs, cont, basic_blocks) -> list[ast.stmt]:
+        match rhs:
+            case ast.IfExp(test, body, orelse):
+                curr = self.create_block(cont, basic_blocks)
+                # holly shit, so smart, not explicate_effect but explicate_assign! don't deconstruct but translate!
+                new_body = self.explicate_assign(body, lhs, curr, basic_blocks)
+                new_orelse = self.explicate_assign(orelse, lhs, curr, basic_blocks)
+                return self.explicate_pred(test, new_body, new_orelse, basic_blocks)
+            case Begin(body, result):
+                cont = [ast.Assign([lhs], result)] + cont
+                for s in reversed(body):
+                    cont = self.explicate_stmt(s, cont, basic_blocks)
+                return cont
+            case _:
+                return [ast.Assign([lhs], rhs)] + cont
+        
+
+    def explicate_pred(self, cnd, thn, els, basic_blocks) -> list[ast.stmt]:
+        match cnd:
+            case ast.Compare(left, [op], [right]):
+                goto_thn = self.create_block(thn, basic_blocks)
+                goto_els = self.create_block(els, basic_blocks)
+                return [ast.If(cnd, goto_thn, goto_els)]
+            case ast.Constant(True):
+                return thn
+            case ast.Constant(False):
+                return els
+            case ast.UnaryOp(ast.Not(), operand):
+                goto_thn = self.create_block(thn, basic_blocks)
+                goto_els = self.create_block(els, basic_blocks)
+                return [ast.If(cnd, goto_thn, goto_els)]
+            case ast.IfExp(test, body, orelse):
+                # holly recursion
+                goto_thn = self.explicate_pred(body, thn, els, basic_blocks)
+                goto_els = self.explicate_pred(orelse, thn, els, basic_blocks)
+                return self.explicate_pred(test, goto_thn, goto_els, basic_blocks)
+            case Begin(body, result):
+                cont = self.explicate_pred(result, thn, els, basic_blocks)
+                for s in reversed(body):
+                    cont = self.explicate_stmt(s, cont, basic_blocks)
+                return cont
+            case _:
+                return [ast.If(ast.Compare(cnd, [ast.Eq()], [ast.Constant(False)]),
+                    self.create_block(els, basic_blocks),
+                    self.create_block(thn, basic_blocks))]
+                
+
+    def explicate_stmt(self, s, cont, basic_blocks) -> list[ast.stmt]:
+        match s:
+            case ast.Assign([lhs], rhs):
+                return self.explicate_assign(rhs, lhs, cont, basic_blocks)
+            case ast.Expr(value):
+                return self.explicate_effect(value, cont, basic_blocks)
+            case ast.If(test, body, orelse):
+                curr = self.create_block(cont, basic_blocks)
+                
+                new_body = curr
+                for s in reversed(body):
+                    new_body = self.explicate_stmt(s, new_body, basic_blocks)
+
+                new_orelse = curr
+                for s in reversed(orelse):
+                    new_orelse = self.explicate_stmt(s, new_orelse, basic_blocks)
+                    
+                return self.explicate_pred(test, new_body, new_orelse, basic_blocks)
+            case _:
+                raise Exception('error in explicate_stmt, unexpected ' + repr(s))
+
+        
+    # generate backward...
+    def run(self, p: ast.Module, manager: PassManager) -> CProgram: #type: ignore
+        match p:
+            case ast.Module(body):
+                new_body = [ast.Return(ast.Constant(0))]
+                basic_blocks = {}
+                for s in reversed(body):
+                    new_body = self.explicate_stmt(s, new_body, basic_blocks)
+                basic_blocks[label_name('start')] = new_body
+                return CProgram(basic_blocks)
+
+
+############################################################################
 # Select Instructions
 ############################################################################
-class SelectInstrPass(TransformPass):
+class SelectInstrPass(TransformPass): 
 
     name = 'select_instructions'
     source = 'Py'
@@ -108,6 +322,10 @@ class SelectInstrPass(TransformPass):
     
     def select_arg(self, e: ast.expr) -> x86.arg:
         match e:
+            case ast.Constant(True):
+                return x86.Immediate(1)
+            case ast.Constant(False):
+                return x86.Immediate(0)
             case ast.Constant(value):
                 return x86.Immediate(value)
             case ast.Name(id):
@@ -115,9 +333,25 @@ class SelectInstrPass(TransformPass):
             case _:
                 raise Exception('select_stmt: unexpected ' + repr(e))
 
+    def get_cc(self, cmp) -> str:
+        match cmp:
+            case ast.Eq():
+                return 'e'
+            case ast.Lt():
+                return 'l'
+            case ast.LtE():
+                return 'le'
+            case ast.Gt():
+                return 'g'
+            case ast.GtE():
+                return 'ge'
+            case _:
+                raise Exception("unknow" + repr(cmp))
+
     def select_stmt(self, s: ast.stmt) -> List[x86.instr]:
         match s:
-            # Special Cases
+            # Assign
+            ## Special Cases
             case ast.Assign([ast.Name(id1)], ast.BinOp(ast.Name(id2), ast.Add(), right)) if id1 == id2:
                 return [x86.Instr('addq', [self.select_arg(right), x86.Variable(id1)])]
             case ast.Assign([ast.Name(id)], ast.BinOp(left, ast.Add(), right)):
@@ -128,7 +362,9 @@ class SelectInstrPass(TransformPass):
             case ast.Assign([ast.Name(id)], ast.BinOp(left, ast.Sub(), right)):
                 return [x86.Instr('movq', [self.select_arg(left), x86.Variable(id)]),
                         x86.Instr('subq', [self.select_arg(right), x86.Variable(id)])]
-            # Common Cases
+            case ast.Assign([ast.Name(id1)], ast.UnaryOp(ast.Not(), ast.Name(id2))) if id1 == id2:
+                return [x86.Instr('xorq', [x86.Immediate(1), x86.Variable(id1)])]
+            ## Common Cases
             case ast.Assign([ast.Name(id)], ast.UnaryOp(ast.USub(), arg)):
                 return [x86.Instr('movq', [self.select_arg(arg), x86.Variable(id)]),
                         x86.Instr('negq', [x86.Variable(id)])]
@@ -137,23 +373,38 @@ class SelectInstrPass(TransformPass):
             case ast.Assign([ast.Name(id)], ast.Call(ast.Name('input_int'), [], _)):
                 return [x86.Callq('read_int', 1),
                         x86.Instr('movq', [x86.Reg('rax'), x86.Variable(id)])]
+            case ast.Assign([ast.Name(id)], ast.Compare(left,[cmp],[right])):
+                return [x86.Instr('cmpq', [self.select_arg(left), self.select_arg(right)]),
+                        x86.Instr('set' + self.get_cc(cmp), [x86.Reg('al')]),
+                        x86.Instr('movzq', [x86.Reg('al'), x86.Variable(id)])]
+            case ast.Assign([ast.Name(id)], ast.UnaryOp(ast.Not(), arg)):
+                return [x86.Instr('movq', [self.select_arg(arg), x86.Variable(id)]),
+                        x86.Instr('xorq', [x86.Immediate(1), x86.Variable(id)])]
+            # Expr
             case ast.Expr(ast.Call(ast.Name('print'), [arg], _)):
                 return [x86.Instr('movq', [self.select_arg(arg), x86.Reg('rdi')]),
                         x86.Callq('print_int', 1)]
             case ast.Expr(ast.Call(ast.Name('input_int'), [arg], _)):
                 return [x86.Callq('read_int', 1)]
-            case ast.Expr(ast.Constant | ast.Name):
+            case ast.Expr(_):
                 return []
-            case ast.Expr(ast.BinOp(ast.Constant | ast.Name, _, ast.Constant | ast.Name)):
-                return []
-            case ast.Expr(ast.UnaryOp(ast.USub(), ast.Constant | ast.Name)):
+            # Tail
+            case Goto(label):
+                return [x86.Jump(label)]
+            case ast.If(ast.Compare(left,[cmp],[right]), [Goto(label1)], [Goto(label2)]):
+                return [x86.Instr('cmpq', [self.select_arg(left), self.select_arg(right)]),
+                        x86.JumpIf(self.get_cc(cmp), label1),
+                        x86.Jump(label2)]
+            case ast.Return(v):
                 return []
             case _:
                 raise Exception('select_stmt: unexpected ' + repr(s))
 
-    def run(self, p: ast.Module, manager: PassManager) -> x86.X86Program: #type: ignore
-        stmts = [stmt for s in p.body for stmt in self.select_stmt(s)]
-        return x86.X86Program(stmts)
+    def run(self, p: CProgram, manager: PassManager) -> x86.X86Program: #type: ignore
+        body = {}
+        for bk, ss in p.body.items():
+            body[bk] = [stmt for s in ss for stmt in self.select_stmt(s)]
+        return x86.X86Program(body)
 
 
 
@@ -292,7 +543,7 @@ class PreConPass(TransformPass):
                x86.Instr('retq', [])
                ]
             
-        prog = x86.X86Program(prelude + p.body + conlusion)
+        prog = x86.X86Program(prelude + p.body + conlusion) #type: ignore
         prog.stack_space = sp
         return prog
 

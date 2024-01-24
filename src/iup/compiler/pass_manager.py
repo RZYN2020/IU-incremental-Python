@@ -2,12 +2,13 @@ from abc import abstractmethod
 import ast
 from typing import List, Any,Literal, TypeAlias, Dict
 from abc import ABC
+from iup.utils.utils import CProgram
 
 import iup.x86.x86_ast as x86
 
 PassName: TypeAlias = str
-Language = Literal['Py', 'X86']
-Program = ast.Module | x86.X86Program
+Language = Literal['Py', 'X86', 'CLike']
+Program = ast.Module | x86.X86Program | CProgram
 
 
 class Pass(ABC):
@@ -73,6 +74,8 @@ class PassManager(TransformPass):
         self.prog = prog
         
         for trans in self.transforms:
+            print('before ' + trans.name + ' :\n')
+            print(str(self.prog))
             self.prog = trans.run(self.prog, self)
         
         self.cache = {}

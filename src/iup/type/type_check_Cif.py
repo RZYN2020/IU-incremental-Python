@@ -1,5 +1,5 @@
 from ast import *
-from utils import CProgram, Goto, trace, Bottom, IntType, BoolType, Begin
+from iup.utils import CProgram, Goto, Bottom, IntType, BoolType, Begin
 import copy
 
 class TypeCheckCif:

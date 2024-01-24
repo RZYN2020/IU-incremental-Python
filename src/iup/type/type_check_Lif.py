@@ -1,6 +1,6 @@
 from ast import *
-from type_check_Lvar import TypeCheckLvar
-from utils import *
+from .type_check_Lvar import TypeCheckLvar
+from iup.utils import IntType, BoolType, Begin
 
 class TypeCheckLif(TypeCheckLvar):
           

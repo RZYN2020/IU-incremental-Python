@@ -1,7 +1,7 @@
 import argparse
 from typing import List
-from src.iup.compiler import AnalysisPass, TransformPass, Pass, Program, LifManager
-from src.iup import ALL_PASSES, compile, PassManager
+from iup.compiler import AnalysisPass, TransformPass, Pass, Program, LifManager
+from iup import ALL_PASSES, compile, PassManager
 
 class MainPassManager(PassManager):
 

@@ -3,7 +3,9 @@ from .compiler_register_allocator import *
 from .compiler import *
 
 ALL_PASSES_LIST: List[Pass] = [
+    ShrinkPass(),
     RCOPass(),
+    ExplicateControlPass(),
     SelectInstrPass(),
     AllocateRegPass(),
     AssignHomePass(),
@@ -34,6 +36,7 @@ LvarManager = PassManager(LvarTransforms, LvarAnalyses)
 LifTransforms: List[TransformPass] = [
     ShrinkPass(),
     RCOPass(),
+    ExplicateControlPass(),
     SelectInstrPass(),
     AllocateRegPass(),
     PatchInsPass(),
@@ -43,6 +46,6 @@ LifAnalyses: List[AnalysisPass] = [
     UncoverLivePass(),
     BuildInterferencePass()
 ]
-LifManager = PassManager(LifTransforms, LifAnalyses)
+LifManager = PassManager(LifTransforms, LifAnalyses, 'Lif')
 
 

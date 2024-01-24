@@ -692,14 +692,16 @@ class Uninitialized(expr):
 @dataclass
 class CProgram:
     __match_args__ = ("body",)
-    body: list[stmt]
+    body: dict[str, list[stmt]]
 
     def __str__(self):
         result = ''
-        for (l, ss) in enumerate(self.body):
-            result += str(l) + ':\n'
+        for (bk, ss) in self.body.items():
+            result += bk + ':\n'
             indent()
-            result += str(ss) + '\n'
+            for s in ss:
+                result += str(s)
+            result += '\n'
             dedent()
         return result
 
