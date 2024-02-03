@@ -1,7 +1,8 @@
-from ..utils.graph import UndirectedAdjList
+from optparse import Option
+from ..utils.graph import DirectedAdjList, UndirectedAdjList, topological_sort, transpose
 from ..utils.priority_queue import PriorityQueue
 from ..utils.dict import TwoWayDict
-from typing import Any, Tuple, Set, Dict, List
+from typing import Any, Optional, Tuple, Set, Dict, List
 import iup.x86.x86_ast as x86
 from typing import Set, Dict, Tuple
 from .pass_manager import AnalysisPass, TransformPass, PassManager
@@ -74,16 +75,45 @@ class UncoverLivePass(AnalysisPass):
             case _:
                 return set()
 
-    def run(self, p: x86.X86Program, manager: PassManager) -> Dict[x86.instr, Set[x86.location]]: #type: ignore
-        live_vars: Dict[x86.instr, Set[x86.location]] = {}
-        cur_live: Set[x86.location] = set()
-        for i in reversed(p.body): #type: ignore
-            i : x86.instr 
-            live_vars[i] = cur_live
-            reads = self.read_vars(i)
-            writes = self.write_vars(i)
-            cur_live = cur_live.difference(writes).union(reads)
-        return live_vars
+    def run(self, p: x86.X86Program, manager: PassManager) -> Dict[str, Dict[x86.instr, Set[x86.location]]]: #type: ignore
+        res : Dict[str, Dict[x86.instr, Set[x86.location]]] = {}
+        
+        def get_target(bk: List[x86.instr]) -> List[str]:
+            match reversed(bk):
+                case [x86.Jump(label), *_]:
+                    return [label]
+                case [x86.Jump(label2), x86.JumpIf(_, label1), x86.Instr('cmpq', _), *_]:
+                    return [label1, label2]
+                case _:
+                    return []
+        
+        cfg = DirectedAdjList()
+        for lb, bk in p.body.items(): #type: ignore
+            cfg.add_vertex(lb)
+            for tg in get_target(bk):
+                cfg.add_vertex(tg)
+                cfg.add_edge(lb, tg)
+                
+        vs = topological_sort(transpose(cfg))
+        
+        live_before_block: Dict[str, Set[x86.location]] = {}
+        for v in vs:
+            live_vars: Dict[x86.instr, Set[x86.location]] = {}
+            cur_live: Set[x86.location] = set()
+            for e in cfg.in_edges(v):
+                cur_live = cur_live.union(live_before_block[e.source])
+                
+            for i in reversed(p.body[v]): #type: ignore
+                i : x86.instr 
+                live_vars[i] = cur_live
+                reads = self.read_vars(i)
+                writes = self.write_vars(i)
+                cur_live = cur_live.difference(writes).union(reads)
+                
+            live_before_block[v] = cur_live
+            res[v] = live_vars
+            
+        return res
 
 
 ############################################################################
@@ -95,7 +125,7 @@ class BuildInterferencePass(AnalysisPass):
     
     def run(self, p: x86.X86Program, manager: PassManager) -> UndirectedAdjList: #type: ignore
         
-        live_after = manager.get_result("uncover_live")
+        live_after: Dict[str, Dict[x86.instr, Set[x86.location]]] = manager.get_result("uncover_live")
         
         graph = UndirectedAdjList()
         # simple O(n^2) implementation
@@ -106,22 +136,23 @@ class BuildInterferencePass(AnalysisPass):
         #                 graph.add_edge(a, b)
 
         # O(n) implementation
-        for i in p.body:
-            match i:
-                case x86.Instr('movq', [x86.Reg(_) | x86.Variable(_) as a, x86.Reg(_) | x86.Variable(_) as b]):
-                    lives = live_after[i]
-                    for l in lives:
-                        if a != l and b != l: # As long as no write to a/b, a and b don't inference each other.
-                            if not graph.has_edge(a, l): #type: ignore
-                                graph.add_edge(a, l) #type: ignore
-                case _:
-                    writes = UncoverLivePass.write_vars(i) #type: ignore
-                    lives = live_after[i]
-                    for a in writes:
-                        for b in lives:
-                            if a != b:
-                                if not graph.has_edge(a, b): #type: ignore
-                                    graph.add_edge(a, b) #type: ignore
+        for lb, bk in p.body.items(): #type: ignore
+            for i in bk:
+                match i:
+                    case x86.Instr('movq' | 'movzbq', [x86.Reg(_) | x86.Variable(_) as a, x86.Reg(_) | x86.Variable(_) as b]):
+                        lives = live_after[lb][i]
+                        for l in lives:
+                            if a != l and b != l: # As long as no write to a/b, a and b don't inference each other.
+                                if not graph.has_edge(a, l): #type: ignore
+                                    graph.add_edge(a, l) #type: ignore
+                    case _:
+                        writes = UncoverLivePass.write_vars(i) #type: ignore
+                        lives = live_after[lb][i]
+                        for a in writes:
+                            for b in lives:
+                                if a != b:
+                                    if not graph.has_edge(a, b): #type: ignore
+                                        graph.add_edge(a, b) #type: ignore
 
         return graph
 
@@ -165,8 +196,13 @@ class AllocateRegPass(TransformPass):
 
     def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
         graph = manager.get_result('build_interference')
-        vars = set([item for sublist in [UncoverLivePass.write_vars(i) for i in p.body] #type: ignore
-                   for item in sublist if isinstance(item, x86.Variable)])
+        vars = set()
+        for bk in p.body.values(): #type: ignore
+            for i in bk:
+                for v in UncoverLivePass.write_vars(i):
+                    if isinstance(v, x86.Variable):
+                        vars.add(v)
+
         for v in vars:
             graph.add_vertex(v)
         colors, spilled = self.color_graph(graph, vars) #type: ignore
@@ -179,28 +215,31 @@ class AllocateRegPass(TransformPass):
             else:
                 return a
 
-        instrs: List[x86.instr] = []
-        for i in p.body:
-            match i:
-                case x86.Instr(op, [a, b]):
-                    instrs.append(x86.Instr(op, [alloc_reg(a), alloc_reg(b)]))
-                case x86.Instr(op, [a]):
-                    instrs.append(x86.Instr(op, [alloc_reg(a)]))
-                case _:
-                    instrs.append(i)  #type: ignore
+        body: Dict[str, List[x86.instr]] = {}
+        for lb, bk in p.body.items(): #type: ignore
+            body[lb] = []
+            for i in bk:
+                match i:
+                    case x86.Instr(op, [a, b]):
+                        body[lb].append(x86.Instr(op, [alloc_reg(a), alloc_reg(b)]))
+                    case x86.Instr(op, [a]):
+                        body[lb].append(x86.Instr(op, [alloc_reg(a)]))
+                    case _:
+                        body[lb].append(i)  #type: ignore
 
         regs: Set[x86.Reg] = set()
-        for i in instrs:
-            match i:
-                case x86.Instr(_, [x86.Reg(_) as a, *_]):
-                    regs.add(a)
-                case x86.Instr(_, [_, x86.Reg(_) as a]):
-                    regs.add(a)
-                case _:
-                    pass
+        for bk in body.values(): #type: ignore
+            for i in bk:
+                match i:
+                    case x86.Instr(_, [x86.Reg(_) as a, *_]):
+                        regs.add(a)
+                    case x86.Instr(_, [_, x86.Reg(_) as a]):
+                        regs.add(a)
+                    case _:
+                        pass
 
         used_callee = [r for r in regs if r in callee_saved]
-        prog = x86.X86Program(instrs)
+        prog = x86.X86Program(body)
         prog.stack_space = (len(spilled) + len(used_callee)) * 8
         prog.used_callee = used_callee
         return prog

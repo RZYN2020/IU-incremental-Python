@@ -396,7 +396,7 @@ class SelectInstrPass(TransformPass):
                         x86.JumpIf(self.get_cc(cmp), label1),
                         x86.Jump(label2)]
             case ast.Return(v):
-                return []
+                return [x86.Jump('conclusion')]
             case _:
                 raise Exception('select_stmt: unexpected ' + repr(s))
 
@@ -490,6 +490,11 @@ class PatchInsPass(TransformPass):
                     x86.Instr('movq', [x86.Immediate(imm), x86.Reg('rax')]),
                     x86.Instr(op, [m1, x86.Reg('rax')]),
                 ]
+            case x86.Instr('cmpq', [m1, x86.Immediate(imm)]):
+                return [
+                    x86.Instr('movq', [x86.Immediate(imm), x86.Reg('rax')]),
+                    x86.Instr('cmpq', [m1, x86.Reg('rax')]),
+                ]
             case _:
                 return [i]
 
@@ -497,17 +502,23 @@ class PatchInsPass(TransformPass):
         return [instr for s in ss for instr in self.patch_instr(s)]
 
     def run(self, p: x86.X86Program, manager: PassManager) -> x86.X86Program: #type: ignore
-        instrs = self.patch_instrs(p.body) #type: ignore
-        pinstrs: List[x86.instr] = []
-        for i in instrs:
-            match i:
-                case x86.Instr('movq', [a, b]):
-                    if a != b:
-                        pinstrs.append(i)
-                case _:
-                    pinstrs.append(i)
+        
+        body = {}
+        for lb, bk in p.body.items(): #type: ignore
+            body[lb] = [stmt for stmt in self.patch_instrs(bk)] #type: ignore
+        
+        for lb, bk in body.items():
+            pbk = []
+            for i in bk:
+                match i:
+                    case x86.Instr('movq', [a, b]):
+                        if a != b:
+                            pbk.append(i)
+                    case _:
+                        pbk.append(i)
+            body[lb] = pbk
                     
-        prog = x86.X86Program(pinstrs)
+        prog = x86.X86Program(body)
         prog.stack_space = p.stack_space
         prog.used_callee = []
         return prog
@@ -537,14 +548,16 @@ class PreConPass(TransformPass):
         else:
             conlusion = []
 
+        prelude += [x86.Jump('start')]
+        
         conlusion += \
             [x86.Instr('popq', [r]) for r in reversed(p.used_callee)] \
             + [x86.Instr('popq', [x86.Reg('rbp')]),
                x86.Instr('retq', [])
                ]
             
-        prog = x86.X86Program(prelude + p.body + conlusion) #type: ignore
-        prog.stack_space = sp
-        return prog
+        p.body['main'] = prelude #type: ignore
+        p.body['conclusion'] = conlusion #type: ignore
+        return p
 
 

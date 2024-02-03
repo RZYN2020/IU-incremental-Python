@@ -4,7 +4,7 @@ import sys
 from typing import Any, Callable, List, Tuple
 from ast import parse
 from ..x86.eval_x86 import interp_x86 # type: ignore
-from ..compiler import Language, PassManager, Program, LvarAnalyses, LvarTransforms
+from ..compiler import Language, LifAnalyses, LifTransforms, PassManager, Program, LvarAnalyses, LvarTransforms
 from ..interp import INTERPRETERS
 from ..type   import TYPE_CHECKERS
 
@@ -17,21 +17,20 @@ class TestPassManager(PassManager):
 
     def run(self, prog: Program, manager: 'PassManager') -> Program:
         self.prog = prog
+        TYPE_CHECKERS[self.lang].type_check(self.prog) #type: ignore
         
         for trans in self.transforms:
-            if trans.source != 'X86':
-                TYPE_CHECKERS[self.lang].type_check(self.prog) #type: ignore
             self.prog = trans.run(self.prog, self)
             check_pass(trans.target, self.prog, self.test_dir, self.test, False)
         
         self.cache = {}
         return self.prog
     
-LvarTestManager = TestPassManager(LvarTransforms, LvarAnalyses)
+LifTestManager = TestPassManager(LifTransforms, LifAnalyses, lang='Lif')
     
 compiler_test_configs: List[Tuple[TestPassManager, str]] = [
-    (LvarTestManager, os.path.join(TEST_BASE, 'var')),
-    (LvarTestManager, os.path.join(TEST_BASE, 'var')),
+    (LifTestManager, os.path.join(TEST_BASE, 'var')),
+    (LifTestManager, os.path.join(TEST_BASE, 'if')),
 ]
 
 

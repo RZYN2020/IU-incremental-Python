@@ -74,9 +74,9 @@ class PassManager(TransformPass):
         self.prog = prog
         
         for trans in self.transforms:
-            print('before ' + trans.name + ' :\n')
-            print(str(self.prog))
             self.prog = trans.run(self.prog, self)
+            print('after ' + trans.name + ' :\n')
+            print(str(self.prog))
         
         self.cache = {}
         return self.prog
