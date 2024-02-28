@@ -60,6 +60,10 @@ class ShrinkPass(TransformPass):
                 new_body = [self.shrink_stmt(stmt) for stmt in body]
                 new_orelse = [self.shrink_stmt(stmt) for stmt in orelse]
                 return ast.If(new_test, new_body, new_orelse)
+            case ast.While(test, body, []):
+                new_test = self.shrink_exp(test)
+                new_body = [self.shrink_stmt(stmt) for stmt in body]
+                return ast.While(new_test, new_body, [])
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
     
@@ -139,7 +143,6 @@ class RCOPass(TransformPass):
                     return (temp, [(temp, ast.IfExp(new_test, new_body, new_orelse))])
                 
                 return ast.IfExp(new_test, new_body, new_orelse), []
-            
             case ast.Compare(left, [op], [right]):
                 new_left, left_temps = self.rco_exp(left, True)
                 new_right, right_temps = self.rco_exp(right, True)
@@ -181,6 +184,12 @@ class RCOPass(TransformPass):
                 new_body = [stmt for s in body for stmt in self.rco_stmt(s)]
                 new_orelse = [stmt for s in orelse for stmt in self.rco_stmt(s)]
                 stmts = temp_assigns + [ast.If(new_test, new_body, new_orelse)]
+            case ast.While(test, body, []):
+                new_test, temps = self.rco_exp(test, False)
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps]
+                new_body = [stmt for s in body for stmt in self.rco_stmt(s)]
+                stmts = temp_assigns + [ast.While(new_test, new_body, [])]
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
         return stmts
@@ -294,6 +303,24 @@ class ExplicateControlPass(TransformPass):
                     new_orelse = self.explicate_stmt(s, new_orelse, basic_blocks)
                     
                 return self.explicate_pred(test, new_body, new_orelse, basic_blocks)
+            case ast.While(test, body, []):
+                curr = self.create_block(cont, basic_blocks)
+                
+                new_body = []
+                for s in reversed(body):
+                    new_body = self.explicate_stmt(s, new_body, basic_blocks)
+                
+                new_body_label = self.create_block(new_body, basic_blocks)
+                
+                loop_head = self.explicate_pred(test, new_body_label, curr, basic_blocks)
+                loop_head = self.create_block(loop_head, basic_blocks)
+                
+                # a liitle hack
+                new_body.extend(loop_head)
+                
+                return loop_head
+                
+                
             case _:
                 raise Exception('error in explicate_stmt, unexpected ' + repr(s))
 
@@ -374,7 +401,7 @@ class SelectInstrPass(TransformPass):
                 return [x86.Callq('read_int', 1),
                         x86.Instr('movq', [x86.Reg('rax'), x86.Variable(id)])]
             case ast.Assign([ast.Name(id)], ast.Compare(left,[cmp],[right])):
-                return [x86.Instr('cmpq', [self.select_arg(left), self.select_arg(right)]),
+                return [x86.Instr('cmpq', [self.select_arg(right), self.select_arg(left)]),
                         x86.Instr('set' + self.get_cc(cmp), [x86.Reg('al')]),
                         x86.Instr('movzq', [x86.Reg('al'), x86.Variable(id)])]
             case ast.Assign([ast.Name(id)], ast.UnaryOp(ast.Not(), arg)):
@@ -392,7 +419,7 @@ class SelectInstrPass(TransformPass):
             case Goto(label):
                 return [x86.Jump(label)]
             case ast.If(ast.Compare(left,[cmp],[right]), [Goto(label1)], [Goto(label2)]):
-                return [x86.Instr('cmpq', [self.select_arg(left), self.select_arg(right)]),
+                return [x86.Instr('cmpq', [self.select_arg(right), self.select_arg(left)]),
                         x86.JumpIf(self.get_cc(cmp), label1),
                         x86.Jump(label2)]
             case ast.Return(v):

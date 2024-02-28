@@ -1,6 +1,6 @@
 from ast import *
-from type_check_Lif import TypeCheckLif
-from utils import *
+from .type_check_Lif import TypeCheckLif
+from ..utils import *
 
 class TypeCheckLwhile(TypeCheckLif):
 

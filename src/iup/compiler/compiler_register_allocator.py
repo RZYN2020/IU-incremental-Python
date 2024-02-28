@@ -1,4 +1,5 @@
 from optparse import Option
+
 from ..utils.graph import DirectedAdjList, UndirectedAdjList, topological_sort, transpose
 from ..utils.priority_queue import PriorityQueue
 from ..utils.dict import TwoWayDict
@@ -6,6 +7,7 @@ from typing import Any, Optional, Tuple, Set, Dict, List
 import iup.x86.x86_ast as x86
 from typing import Set, Dict, Tuple
 from .pass_manager import AnalysisPass, TransformPass, PassManager
+from .dataflow_analysis import analyze_dataflow
 
 
 reg_map = TwoWayDict({
@@ -41,8 +43,12 @@ class UncoverLivePass(AnalysisPass):
     @staticmethod
     def read_vars(i: x86.instr) -> Set[x86.location]:
         match i:
+            case x86.Instr(_, [x86.Reg(_) | x86.Variable(_) as a, x86.Reg(_) | x86.Variable(_) as b]):  # binary op
+                return {a, b}
             case x86.Instr(_, [x86.Reg(_) | x86.Variable(_) as a, _]):  # binary op
                 return {a}
+            case x86.Instr(_, [_, x86.Reg(_) | x86.Variable(_) as b]):  # binary op
+                return {b}
             case x86.Instr(_, [a]):  # unary op
                 return {a} #type: ignore
             case x86.Callq(_, _):
@@ -55,7 +61,7 @@ class UncoverLivePass(AnalysisPass):
     @staticmethod
     def write_vars(i: x86.instr) -> Set[x86.location]:
         match i:
-            case x86.Instr(_, [_, b]):  # binary op
+            case x86.Instr(_, [_, x86.Reg(_) | x86.Variable(_) as b]):  # binary op
                 return {b} #type: ignore
             case x86.Instr(_, [a]):  # unary op
                 return {a} #type: ignore
@@ -94,24 +100,25 @@ class UncoverLivePass(AnalysisPass):
                 cfg.add_vertex(tg)
                 cfg.add_edge(lb, tg)
                 
-        vs = topological_sort(transpose(cfg))
-        
-        live_before_block: Dict[str, Set[x86.location]] = {}
-        for v in vs:
+        def transfer(node, input):
             live_vars: Dict[x86.instr, Set[x86.location]] = {}
-            cur_live: Set[x86.location] = set()
-            for e in cfg.in_edges(v):
-                cur_live = cur_live.union(live_before_block[e.source])
+            cur_live: Set[x86.location] = input
                 
-            for i in reversed(p.body[v]): #type: ignore
+            for i in reversed(p.body[node]): #type: ignore
                 i : x86.instr 
                 live_vars[i] = cur_live
                 reads = self.read_vars(i)
                 writes = self.write_vars(i)
                 cur_live = cur_live.difference(writes).union(reads)
                 
-            live_before_block[v] = cur_live
-            res[v] = live_vars
+            res[node] = live_vars
+
+        bottom = set()
+        
+        join = lambda x, y: x.union(y)
+        
+        analyze_dataflow(cfg, transfer, bottom, join)
+            
             
         return res
 

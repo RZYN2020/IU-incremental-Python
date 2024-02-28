@@ -33,7 +33,7 @@ LvarAnalyses: List[AnalysisPass] = [
 LvarManager = PassManager(LvarTransforms, LvarAnalyses)
 
 
-LifTransforms: List[TransformPass] = [
+LwhileTransforms: List[TransformPass] = [
     ShrinkPass(),
     RCOPass(),
     ExplicateControlPass(),
@@ -42,10 +42,10 @@ LifTransforms: List[TransformPass] = [
     PatchInsPass(),
     PreConPass()
 ]
-LifAnalyses: List[AnalysisPass] = [
+LwhileAnalyses: List[AnalysisPass] = [
     UncoverLivePass(),
     BuildInterferencePass()
 ]
-LifManager = PassManager(LifTransforms, LifAnalyses, 'Lif')
+LwhileManager = PassManager(LwhileTransforms, LwhileAnalyses, 'Lwhile')
 
 

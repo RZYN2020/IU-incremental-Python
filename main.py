@@ -1,6 +1,6 @@
 import argparse
 from typing import List
-from iup.compiler import AnalysisPass, TransformPass, Pass, Program, LifManager
+from iup.compiler import AnalysisPass, TransformPass, Pass, Program, LwhileManager
 from iup import ALL_PASSES, compile, PassManager
 
 class MainPassManager(PassManager):
@@ -12,9 +12,9 @@ class MainPassManager(PassManager):
         self.prog = prog
         
         for trans in self.transforms:
-            print(f"Run trans {trans.name}")
+            # print(f"Run trans {trans.name}")
             self.prog = trans.run(self.prog, self)
-            print(f"result:\n{self.prog}\n")
+            # print(f"result:\n{self.prog}\n")
         
         self.cache = {}
         return self.prog
@@ -30,9 +30,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.passes == ['all']:
         if args.verbose:
-            manager = MainPassManager(LifManager.transforms, list(LifManager.analyses.values()))
+            manager = MainPassManager(LwhileManager.transforms, list(LwhileManager.analyses.values()))
         else:
-            manager = LifManager
+            manager = LwhileManager
     else:
         passes: List[Pass] = [ALL_PASSES[p] for p in args.passes if (p in ALL_PASSES)]
         transforms: List[TransformPass] = [p for p in passes if not p.pure()] #type: ignore

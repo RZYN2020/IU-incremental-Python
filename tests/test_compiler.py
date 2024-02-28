@@ -3,12 +3,12 @@ import os
 import sys
 from typing import Any, Callable, List, Tuple
 from ast import parse
-from ..x86.eval_x86 import interp_x86 # type: ignore
-from ..compiler import Language, LifAnalyses, LifTransforms, PassManager, Program, LvarAnalyses, LvarTransforms
-from ..interp import INTERPRETERS
-from ..type   import TYPE_CHECKERS
+from iup.x86.eval_x86 import interp_x86 # type: ignore
+from iup.compiler import Language, LwhileAnalyses, LwhileTransforms, PassManager, Program
+from iup.interp import INTERPRETERS
+from iup.type   import TYPE_CHECKERS
 
-TEST_BASE = os.path.join(os.getcwd(), 'src/iup/tests')
+TEST_BASE = os.path.join(os.getcwd(), 'tests')
 
 class TestPassManager(PassManager):
 
@@ -21,16 +21,19 @@ class TestPassManager(PassManager):
         
         for trans in self.transforms:
             self.prog = trans.run(self.prog, self)
-            check_pass(trans.target, self.prog, self.test_dir, self.test, False)
+            # check_pass(trans.target, self.prog, self.test_dir, self.test, False)
+        
+        assert check_pass('X86', self.prog, self.test_dir, self.test, False)
         
         self.cache = {}
         return self.prog
     
-LifTestManager = TestPassManager(LifTransforms, LifAnalyses, lang='Lif')
+LwhileTestManager = TestPassManager(LwhileTransforms, LwhileAnalyses, lang='Lwhile')
     
 compiler_test_configs: List[Tuple[TestPassManager, str]] = [
-    (LifTestManager, os.path.join(TEST_BASE, 'var')),
-    (LifTestManager, os.path.join(TEST_BASE, 'if')),
+    (LwhileTestManager, os.path.join(TEST_BASE, 'var')),
+    (LwhileTestManager, os.path.join(TEST_BASE, 'if')),
+    (LwhileTestManager, os.path.join(TEST_BASE, 'while')),
 ]
 
 
@@ -55,8 +58,10 @@ def check_pass(lang: Language, res: Any, test_dir: str, test: str, emulate: bool
         else:
             with open(f'{test_dir}/{test}.s', 'w') as file:
                 file.write(str(res))
-            os.system(f'gcc runtime.o {test_dir}/{test}.s -o {test_dir}/{test}')
-            run_with_io(lambda: os.system(f'{test_dir}/{test}')) #type: ignore
+            if os.system(f'gcc runtime.o {test_dir}/{test}.s -o {test_dir}/{test}') != 0:
+                return False
+            
+            os.system(f'{test_dir}/{test} < {input_file} > {output_file}') #type: ignore
 
     return os.system('diff --strip-trailing-cr' + ' -b ' + output_file + ' ' + os.path.join(test_dir, test + '.golden')) == 0
 

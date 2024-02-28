@@ -13,7 +13,7 @@ asm_file="$current_dir/${source_file%.py}.s"
 exe_file="$current_dir/${source_file%.py}"
 
 # Compile the source file
-python "$script_dir/main.py" "$source_file" -o "$exe_file"
+python3 "$script_dir/main.py" "$source_file" -o "$exe_file"
 
 # Run the compiled output
 "$exe_file"

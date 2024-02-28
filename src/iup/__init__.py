@@ -1,3 +1,4 @@
+from re import S
 from .compiler import PassManager, ALL_PASSES, LvarManager #type: ignore
 from .interp import INTERPRETERS # type: ignore
 from .type import TYPE_CHECKERS # type: ignore
@@ -20,6 +21,7 @@ def compile(source: str, target: str, manager: PassManager, emulate_x86: bool = 
         interp_x86(program)
     else:
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = os.path.join(script_dir, '../../')
         with open(f'{target}.s', 'w') as file:
             file.write(str(program))
         os.system(f'gcc -c -g -std=c99 {script_dir}/runtime.c -o {script_dir}/runtime.o')
