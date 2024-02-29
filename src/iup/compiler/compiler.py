@@ -3,7 +3,7 @@ from typing import List, Dict, Tuple
 
 from pytest import mark
 from iup.utils import generate_name, align, Begin
-from iup.utils.utils import Goto, label_name, CProgram
+from iup.utils.utils import Allocate, Collect, GlobalValue, Goto, label_name, CProgram
 import iup.x86.x86_ast as x86
 import ast
 from iup.compiler.pass_manager import TransformPass, PassManager
@@ -72,7 +72,95 @@ class ShrinkPass(TransformPass):
         stmts = [self.shrink_stmt(stmt) for stmt in prog.body]
         return ast.Module(stmts)
             
+
+############################################################################
+# Expose Allocation Pass
+############################################################################
+class ExposeAllocationPass(TransformPass):
     
+    def expose_exp(self, e: ast.expr) -> ast.expr:
+        match e:
+            case ast.Name(id):
+                return ast.Name(id)
+            case ast.BinOp(left, op, right):
+                new_left = self.expose_exp(left)
+                new_right = self.expose_exp(right)
+                return ast.BinOp(new_left, op, new_right)
+            case ast.UnaryOp(ast.USub(), v):
+                return ast.UnaryOp(ast.USub(), self.expose_exp(v))
+            case ast.Constant(value):
+                return ast.Constant(value)
+            case ast.Call(ast.Name('input_int'), [], keywords):
+                return ast.Call(ast.Name('input_int'), [], keywords)
+            case ast.IfExp(test, body, orelse):
+                new_test = self.expose_exp(test)
+                new_body = self.expose_exp(body) 
+                new_orelse = self.expose_exp(orelse) 
+                return ast.IfExp(new_test, new_body, new_orelse)
+            case ast.Compare(left, [op], [right]):
+                new_left= self.expose_exp(left)
+                new_right = self.expose_exp(right)
+                return ast.Compare(new_left, [op], [new_right])
+            case ast.Tuple(es, ast.Load()):
+                inits = []
+                xs = []
+                len_ = len(es)
+                bytes_ = len_ * 8 + 8
+                
+                for e in es:
+                    x = ast.Name(generate_name('init.'))
+                    xs.append(x)
+                    inits.append(ast.Assign([x], self.expose_exp(e)))
+                
+                v = ast.Name(generate_name('alloc.'))
+                inits.extend([
+                        ast.If(ast.Compare(
+                            ast.BinOp(GlobalValue("free_ptr"), ast.Add(), ast.Constant(bytes_)),
+                            [ast.Lt()], 
+                            [GlobalValue("fromspace_end")]
+                            ),[],[Collect(bytes_)]),
+                        ast.Assign([v], Allocate(len_, e.has_type)) #type: ignore
+                ])    
+                
+                for i, x in enumerate(xs):
+                    inits.append(
+                        ast.Assign(
+                            [ast.Subscript(v, ast.Constant(i))], x
+                            )
+                        )
+                    
+                return Begin(inits, v)
+            case ast.Subscript(tup, index, ast.Load()):
+                return ast.Subscript(tup, index, ast.Load())
+            case ast.Call(ast.Name('len'), [tup]):
+                return ast.Call(ast.Name('len'), [tup])
+            case _:
+                raise Exception('error in interp_exp, unexpected ' + repr(e))
+
+    
+    def expose_stmt(self, s: ast.stmt) -> ast.stmt:
+        match s:
+            case ast.Assign([ast.Name(id)], value):
+                return ast.Assign([ast.Name(id)], self.expose_exp(value))
+            case ast.Expr(ast.Call(ast.Name('print'), [arg], keywords)):
+                return ast.Expr(ast.Call(ast.Name('print'), [self.expose_exp(arg)], keywords))
+            case ast.Expr(value):
+                return ast.Expr(self.expose_exp(value))
+            case ast.If(test, body, orelse):
+                new_test = self.expose_exp(test)
+                new_body = [self.expose_stmt(s) for s in body ]
+                new_orelse = [self.expose_stmt(s) for s in orelse]
+                return ast.If(new_test, new_body, new_orelse)
+            case ast.While(test, body, []):
+                new_test= self.expose_exp(test)
+                new_body = [self.expose_stmt(s) for s in body]
+                return ast.While(new_test, new_body, [])
+            case _:
+                raise Exception('rco_stmt: unexpected ' + repr(s))
+
+    def run(self, prog: ast.Module, manager: PassManager) -> ast.Module: #type: ignore
+        stmts = [self.expose_stmt(s) for s in prog.body]
+        return ast.Module(stmts)
  
 ############################################################################
 # Remove Complex Operands
@@ -150,6 +238,21 @@ class RCOPass(TransformPass):
                     temp = ast.Name(generate_name("_t"))
                     return (temp, left_temps + right_temps + [(temp, ast.Compare(new_left, [op], [new_right]))])
                 return (ast.Compare(new_left, [op], [new_right]), left_temps + right_temps)
+            case Begin(inits, val):
+                new_inits = [stmt for s in inits for stmt in self.rco_stmt(s)]
+                new_val, temps = self.rco_exp(val, False)
+                return (Begin(new_inits, new_val), temps)
+            case Allocate(len_, type):
+                return (Allocate(len_, type), [])
+            case GlobalValue(name):
+                return (GlobalValue(name), [])
+            case ast.Call(ast.Name('len'), [tup]):
+                new_tup, temps = self.rco_exp(tup, True)
+                return (ast.Call(ast.Name('len'), [new_tup]), temps)
+            case ast.Subscript(tup, idx, ast.Load()):
+                new_tup, temps1 = self.rco_exp(tup, True)
+                new_idx, temps2 = self.rco_exp(idx, True)
+                return (ast.Subscript(new_tup, new_idx, ast.Load()), temps1 + temps2)
             case _:
                 raise Exception('error in interp_exp, unexpected ' + repr(e))
 
@@ -162,34 +265,47 @@ class RCOPass(TransformPass):
         temp_assigns: list[ast.stmt]
         match s:
             case ast.Assign([ast.Name(id)], value):
-                new_value, temps = self.rco_exp(value, False)
+                new_value, temps1 = self.rco_exp(value, False)
                 temp_assigns = [ast.Assign([name], exp)
-                                for (name, exp) in temps]
+                                for (name, exp) in temps1]
                 stmts = temp_assigns + [ast.Assign([ast.Name(id)], new_value)]
             case ast.Expr(ast.Call(ast.Name('print'), [arg], keywords)):
-                new_arg, temps = self.rco_exp(arg, True)
+                new_arg, temps1 = self.rco_exp(arg, True)
                 temp_assigns = [ast.Assign([name], exp)
-                                for (name, exp) in temps]
+                                for (name, exp) in temps1]
                 stmts = temp_assigns + \
                     [ast.Expr(ast.Call(ast.Name('print'), [new_arg], keywords))]
             case ast.Expr(value):  # may have side effects in production
-                new_value, temps = self.rco_exp(value, False)
+                new_value, temps1 = self.rco_exp(value, False)
                 temp_assigns = [ast.Assign([name], exp)
-                                for (name, exp) in temps]
+                                for (name, exp) in temps1]
                 stmts = temp_assigns + [ast.Expr(new_value)]
             case ast.If(test, body, orelse):
-                new_test, temps = self.rco_exp(test, False)
+                new_test, temps1 = self.rco_exp(test, False)
                 temp_assigns = [ast.Assign([name], exp)
-                                for (name, exp) in temps]
+                                for (name, exp) in temps1]
                 new_body = [stmt for s in body for stmt in self.rco_stmt(s)]
                 new_orelse = [stmt for s in orelse for stmt in self.rco_stmt(s)]
                 stmts = temp_assigns + [ast.If(new_test, new_body, new_orelse)]
             case ast.While(test, body, []):
-                new_test, temps = self.rco_exp(test, False)
+                new_test, temps1 = self.rco_exp(test, False)
                 temp_assigns = [ast.Assign([name], exp)
-                                for (name, exp) in temps]
+                                for (name, exp) in temps1]
                 new_body = [stmt for s in body for stmt in self.rco_stmt(s)]
                 stmts = temp_assigns + [ast.While(new_test, new_body, [])]
+            case Collect(bytes_):
+                stmts = [Collect(bytes_)]
+            case ast.Assign([ast.Subscript(tup, idx, ast.Load())], value):
+                new_tup, temps1 = self.rco_exp(tup, True)
+                temp_assigns = [ast.Assign([name], exp)
+                                for (name, exp) in temps1]
+                new_idx, temps2 = self.rco_exp(idx, True)
+                temp_assigns += [ast.Assign([name], exp)
+                                for (name, exp) in temps2]
+                new_val, temps3 = self.rco_exp(value, True)
+                temp_assigns += [ast.Assign([name], exp)
+                                for (name, exp) in temps3]
+                stmts = temp_assigns + [ast.Assign([ast.Subscript(new_tup, new_idx, ast.Load())], new_val)]
             case _:
                 raise Exception('rco_stmt: unexpected ' + repr(s))
         return stmts
@@ -235,6 +351,8 @@ class ExplicateControlPass(TransformPass):
                 for s in reversed(body):
                     cont = self.explicate_stmt(s, cont, basic_blocks)
                 return cont
+            case Allocate(len_, type):
+                return [ast.Expr(e)] + cont
             case _:
                 return cont
                 
